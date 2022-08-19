@@ -1,0 +1,9 @@
+{
+    "dns": {
+        "username": "root",
+        "password": "test",
+        "sshkey": "",
+        "address": "192.168.1.1",
+        "port": "22"
+    }
+}
