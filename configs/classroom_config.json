@@ -1,0 +1,65 @@
+{
+    "Debian10": {
+        "username": "testing",
+        "password": "password",
+        "sshkey": "",
+        "address": "192.168.20.23",
+        "port": "22"
+    },
+    "Debian9": {
+        "username": "testing",
+        "password": "password",
+        "sshkey": "",
+        "address": "192.168.20.30",
+        "port": "22"
+    },
+    "CentOS8": {
+        "username": "testing",
+        "password": "password",
+        "sshkey": "",
+        "address": "192.168.20.25",
+        "port": "22"
+    },
+    "UbuntuXenial": {
+        "username": "testing",
+        "password": "password",
+        "sshkey": "",
+        "address": "192.168.20.24",
+        "port": "22"
+    },
+    "UbuntuBionic": {
+        "username": "testing",
+        "password": "password",
+        "sshkey": "",
+        "address": "192.168.20.21",
+        "port": "22"
+    },
+    "Debian11": {
+        "username": "testing",
+        "password": "password",
+        "sshkey": "",
+        "address": "192.168.20.20",
+        "port": "22"
+    },
+    "UbuntuTrusty": {
+        "username": "testing",
+        "password": "password",
+        "sshkey": "",
+        "address": "192.168.20.26",
+        "port": "22"
+    },
+    "CentOS7": {
+        "username": "testing",
+        "password": "password",
+        "sshkey": "",
+        "address": "192.168.1.15",
+        "port": "22"
+    },
+    "UbuntuFocal": {
+        "username": "testing",
+        "password": "password",
+        "sshkey": "",
+        "address": "192.168.20.22",
+        "port": "22"
+    }
+}

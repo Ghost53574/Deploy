@@ -1,9 +1,23 @@
 {
-    "dns": {
-        "username": "root",
-        "password": "test",
-        "sshkey": "",
-        "address": "192.168.1.1",
+    "ubuntu1": {
+        "username": "ubuntu-dummy",
+        "password": "password",
+        "os": "linux",
+        "address": "192.168.1.31",
         "port": "22"
+    },
+    "ubuntu2": {
+        "username": "c0z",
+        "password": "password",
+        "os": "linux",
+        "address": "192.168.1.33",
+        "port": "22"
+    },
+    "winserver1": {
+        "username": "DEEZ\\Administrator",
+        "password": "Password!@",
+        "os": "windows",
+        "address": "192.168.1.35",
+        "port": "5985"
     }
 }
