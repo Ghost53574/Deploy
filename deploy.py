@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import sys
+import sys, os
 import json
 import pypsrp
 from pypsrp._utils import to_bytes, to_string
@@ -21,9 +21,40 @@ from fabric2 import Connection, Config
 # License: https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html (GPL2)
 
 # Impliment WinRM NTLM/CredSSP/HTTPS auth like ansible
-# Needs to use paramiko==2.7.2 due to paramiko bug https://github.com/paramiko/paramiko/pull/1606 treating encrypted RSA keys as DSA keys
+# Needs to use paramiko==2.7.2 due to paramiko bug https://github.com/paramiko/paramiko/pull/1606 
+# treating encrypted RSA keys as DSA keys
 
-BANNER = '''
+import sys
+import subprocess
+import pkg_resources
+
+required = {'pypsrp', 'fabric2'}
+installed = {pkg.key for pkg in pkg_resources.working_set}
+missing = required - installed
+
+if missing:
+    python = sys.executable
+    subprocess.check_call([python, '-m', 'pip', 'install', *missing], stdout=subprocess.DEVNULL)
+
+NEED_ADMIN=False
+SINGLE_HOST=False
+SINGLE_COMMAND=False
+SINGLE_TASK=False
+EXTRA_ARGS=False
+LOGGING=False
+QUIET=True
+FORCE_SSH=False
+LOCAL=False
+
+HEADER = '\033[95m'
+INFO = '\033[92m'
+WARN = '\033[93m'
+FAIL = '\033[91m'
+ENDC = '\033[0m'
+BOLD = '\033[1m'
+UNDERLINE = '\033[4m'
+
+BANNER = f'''{HEADER}{BOLD}
             .______  ._______._______ .___    ._______   ____   ____
     .       :_ _   \ : .____/: ____  ||   |   : .___  \  \   \_/   / .
             |   |   || : _/\ |    :  ||   |   | :   |  |  \___ ___/    .
@@ -37,27 +68,19 @@ BANNER = '''
              .                       .           .           .      .
           .         .    .               .             .         .
                                                          by: ⧸𝒸o𝓏⧸
-'''
+{ENDC}'''
 
-NEED_ADMIN=False
-SINGLE_HOST=False
-SINGLE_COMMAND=False
-SINGLE_TASK=False
-EXTRA_ARGS=False
-LOGGING=False
-QUIET=True
-FORCE_SSH=False
-LOCAL=False
+def print_info(msg: str = None) -> None:
+    if msg:
+        print(f"{INFO}{msg}{ENDC}")
 
-HEADER = '\033[95m'
-OKBLUE = '\033[94m'
-OKCYAN = '\033[96m'
-INFO = '\033[92m'
-WARN = '\033[93m'
-FAIL = '\033[91m'
-ENDC = '\033[0m'
-BOLD = '\033[1m'
-UNDERLINE = '\033[4m'
+def print_warn(msg: str = None) -> None:
+    if msg:
+        print(f"{WARN}{msg}{ENDC}")
+
+def print_fail(msg: str = None) -> None:
+    if msg:
+        print(f"{FAIL}{msg}{ENDC}")
 
 def str_to_bool(value):
     if value.lower() in {'false', 'f', '0', 'no', 'n'}:
@@ -73,16 +96,16 @@ class Script:
         self.directory = directory
         self.extension = extension
 
-    def name(self) -> str:
+    def name(self):
         return self.name
 
-    def path(self) -> str:
+    def path(self):
         return self.path
 
-    def directory(self) -> str:
-        return self.d
+    def directory(self):
+        return self.directory
 
-    def extension(self) -> str:
+    def extension(self):
         return self.extension
 
 def print_results(conn, results: list):
@@ -94,7 +117,17 @@ def execute_task(conn, os, script_name, script_path, script_ext, command, argume
     try:
         if os == "linux":
             PREAMBLE = f"sudo -H -u root -S < <(echo '{sudo_password}') "
-            if script_ext == ".sh":
+            if SINGLE_COMMAND:
+                CMD=""
+                if EXTRA_ARGS:
+                    CMD=f"{command} {arguments}"
+                else:
+                    CMD=f"{command}"
+                if NEED_ADMIN:
+                    results.append(conn.run(PREAMBLE + CMD, warn=True, echo=QUIET, hide=True))
+                else:
+                    results.append(conn.run(CMD, warn=True, echo=QUIET, hide=True))
+            elif script_ext == ".sh":
                 CMD=""
                 if EXTRA_ARGS:
                     CMD=f"bash {script_name} {arguments}"
@@ -179,14 +212,14 @@ def execute_task(conn, os, script_name, script_path, script_ext, command, argume
                             ps.invoke()
                             results.append(ps.output)
     except Exception as e:
-        print(f"{FAIL}Exception: {e}{ENDC}")
+        print_fail(f"Exception: {e}")
         pass
     return results
 
 def execute_script(conn, os, host, scripts, task, command, arguments):
     LOOP=True
     SUDO_PASS=""
-    print(f"{INFO}Connecting to {host} {ENDC}")
+    print_info(f"Connecting to {host}")
     if os == "linux":
         SUDO_PASS = conn['sudo']['password']
     if SINGLE_TASK:
@@ -244,7 +277,7 @@ class Threader:
                     if "port" in values:
                         port     = values["port"]
                     else:
-                        print(f"{WARN}{host} using default port for protocol {ENDC}")
+                        print_warn(f"{host} using default port for protocol")
                     if "password" in values:
                         password = values["password"]
                     elif "sshkey" in values:
@@ -257,7 +290,24 @@ class Threader:
                         if port == "":
                             port = "22"
                         if not USE_SSHKEY:
-                            ssh_config = Config(overrides={'sudo': { 'user': 'root', 'password': password }, 'connect_kwargs': { 'password': password }}) if NEED_ADMIN else Config(overrides={'user': username, 'password': password, 'connect_kwargs': {'password': password }})
+                            ssh_config = Config(
+                                overrides={
+                                    'sudo': { 
+                                        'user': 'root', 
+                                        'password': password },
+                                        'connect_kwargs': { 
+                                            'password': password 
+                                        }
+                                    }
+                                ) if NEED_ADMIN else Config(
+                                overrides={
+                                    'user': username, 
+                                    'password': password,
+                                    'connect_kwargs': {
+                                        'password': password 
+                                        }
+                                    }
+                                )
                             try:
                                 with Connection(host=address, user=username,
                                                 port=port, config=ssh_config) as c:
@@ -265,13 +315,34 @@ class Threader:
                                         ex.submit(execute_script, c, os, host, scripts, task, comamnd, arguments)
                                     )
                             except Exception as e:
-                                print(f"{FAIL}Exception: {e}{ENDC}")
+                                print_fail(f"Exception: {e}")
                         else:
                             sshkey_passphrase = ""
                             sshkey_response = input("Is the private key encrypted? (y/n): ")[:1]
                             if sshkey_response == "y":
                                 sshkey_passphrase = input("Enter the private SSH key passphrase : ")
-                            ssh_config = Config(overrides={'sudo': { 'user': 'root', 'password': password }, 'connect_kwargs': { 'key_filename': sshkey, 'passphrase': sshkey_passphrase, 'look_for_keys': False }}) if NEED_ADMIN else Config(overrides={'user': username, 'password': password, 'connect_kwargs': { 'key_filename': sshkey, 'passphrase': sshkey_passphrase, 'look_for_keys': False }})
+                            ssh_config = Config(
+                                overrides={
+                                    'sudo': { 
+                                        'user': 'root', 
+                                        'password': password }, 
+                                        'connect_kwargs': { 
+                                            'key_filename': sshkey, 
+                                            'passphrase': sshkey_passphrase, 
+                                            'look_for_keys': False 
+                                        }
+                                    }
+                                ) if NEED_ADMIN else Config(
+                                overrides={
+                                    'user': username, 
+                                    'password': password,
+                                    'connect_kwargs': { 
+                                        'key_filename': sshkey, 
+                                        'passphrase': sshkey_passphrase, 
+                                        'look_for_keys': False 
+                                    }
+                                }
+                            )
                             try:
                                 with Connection(host=address, user=username,
                                                 port=port, config=ssh_config) as c:
@@ -279,7 +350,7 @@ class Threader:
                                         ex.submit(execute_script, c, os, host, scripts, task, comamnd, arguments)
                                     )
                             except Exception as e:
-                                print(f"{FAIL}Exception: {e}{ENDC}")
+                                print_fail(f"Exception: {e}")
                     # Otherwise we use WinRM for Windows
                     elif os == "windows":
                         if port == "":
@@ -290,7 +361,7 @@ class Threader:
                                     ex.submit(execute_script, conn, os, host, scripts, task, comamnd, arguments)
                                 )
                         except Exception as e:
-                                print(f"{FAIL}Exception: {e.with_traceback} {e.args} {ENDC}")
+                                print_fail(f"Exception: {e.with_traceback} {e.args}")
             else:
                 for host, values in config.items():
                     USE_SSHKEY=False
@@ -314,7 +385,7 @@ class Threader:
                     if "port" in values:
                         port     = values["port"]
                     else:
-                        print(f"{WARN}{host} using default port for protocol {ENDC}")
+                        print_warn(f"{host} using default port for protocol")
                     if "password" in values:
                         password = values["password"]
                     elif "sshkey" in values:
@@ -327,21 +398,61 @@ class Threader:
                         if port == "":
                             port = "22"
                         if not USE_SSHKEY:
-                            ssh_config = Config(overrides={'sudo': { 'user': 'root', 'password': password}, 'connect_kwargs': { 'password': password }}) if NEED_ADMIN else Config(overrides={'user': username, 'password': password, 'connect_kwargs': {'password': password }})
+                            ssh_config = Config(
+                                overrides={
+                                    'sudo': { 
+                                        'user': 'root', 
+                                        'password': password 
+                                    },
+                                        'connect_kwargs': { 
+                                            'password': password 
+                                        }
+                                    }
+                                ) if NEED_ADMIN else Config(
+                                overrides={
+                                    'user': username, 
+                                    'password': password,
+                                    'connect_kwargs': {
+                                        'password': password 
+                                        }
+                                    }
+                                )
                             try:
                                 with Connection(host=address, user=username,
                                                 port=port, config=ssh_config) as c:
-                                    futures.append(
+                                        futures.append(
                                         ex.submit(execute_script, c, os, host, scripts, task, comamnd, arguments)
                                     )
                             except Exception as e:
-                                print(f"{FAIL}Exception: {e}{ENDC}")
+                                print_fail(f"Exception: {e}")
                         else:
                             sshkey_passphrase = ""
-                            sshkey_response = input("Is the private key encrypted? : ")[:1]
+                            sshkey_response = input("Is the private key encrypted? (y/n): ")[:1]
                             if sshkey_response == "y":
                                 sshkey_passphrase = input("Enter the private SSH key passphrase : ")
-                            ssh_config = Config(overrides={'sudo': { 'user': 'root', 'password': password}, 'connect_kwargs': { 'key_filename': sshkey, 'passphrase': sshkey_passphrase, 'look_for_keys': False }}) if NEED_ADMIN else Config(overrides={'user': username, 'password': password, 'connect_kwargs': { 'key_filename': sshkey, 'passphrase': sshkey_passphrase, 'look_for_keys': False }})
+                            ssh_config = Config(
+                                overrides={
+                                    'sudo': { 
+                                        'user': 'root', 
+                                        'password': password 
+                                    }, 
+                                        'connect_kwargs': { 
+                                            'key_filename': sshkey, 
+                                            'passphrase': sshkey_passphrase, 
+                                            'look_for_keys': False 
+                                        }
+                                    }
+                                ) if NEED_ADMIN else Config(
+                                overrides={
+                                    'user': username, 
+                                    'password': password,
+                                    'connect_kwargs': { 
+                                        'key_filename': sshkey, 
+                                        'passphrase': sshkey_passphrase, 
+                                        'look_for_keys': False 
+                                    }
+                                }
+                            )
                             try:
                                 with Connection(host=address, user=username,
                                                 port=port, config=ssh_config) as c:
@@ -349,7 +460,7 @@ class Threader:
                                         ex.submit(execute_script, c, os, host, scripts, task, comamnd, arguments)
                                     )
                             except Exception as e:
-                                print(f"{FAIL}Exception: {e}{ENDC}")
+                                print_fail(f"Exception: {e}")
                     # Otherwise we use WinRM for Windows
                     elif os == "windows":
                         if port == "":
@@ -360,7 +471,7 @@ class Threader:
                                     ex.submit(execute_script, conn, os, host, scripts, task, comamnd, arguments)
                                 )
                         except Exception as e:
-                                print(f"{FAIL}Exception: {e.with_traceback} {e.args} {ENDC}")
+                                print_fail(f"Exception: {e.with_traceback} {e.args}")
             completed, not_complete = concurrent.futures.wait(futures)
             for result in completed:
                 if not result:
@@ -375,7 +486,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
             prog='Deploy',
             description='Deploy\'s scripts to servers with fabric2\'s ssh or pypsrp winrm via threading')
-    parser.add_argument('-f', '--files', type=argparse.FileType('r'), required=True, help='The files you want to or can execute')
+    parser.add_argument('-e', '--ext', type=str, action='store', default="Nothing", help='The files you want to or can execute')
     parser.add_argument('-k', '--command', type=str, action='store', default="Nothing", help='If specifed, will run the command on hosts selected')
     parser.add_argument('-c', '--config', type=argparse.FileType('r'), required=True, help='Loads a JSON config file with hosts, and stuff')
     parser.add_argument('-t', '--task', type=str, action='store', default="Nothing", help='Run a specific file on all hosts')
@@ -395,21 +506,48 @@ if __name__ == "__main__":
     config = json.load(args.config)
 
     if args.list:
+        print_info("Printing out available hosts:")
         for host, values in config.items():
-            print(f"{host} @ {values['address']}")
-        sys.exit(0)
+            print_warn(f"{host} @ {values['address']}")
+        print("")
 
     cwd = Path(".")
+
+    ext = None
+    if args.ext != "Nothing":
+        ext = args.ext
+    else:
+        ext = [ "py", "sh", "bat", "ps", "pl" ]
+
+    files = []
+    for f in Path(cwd).rglob("*"):
+        if f.is_file():
+            f_parts = f.name.split('.')
+            if len(f_parts) is 2:
+                f_ext = f_parts[1]
+                if f_ext is not None and f_ext in ext:
+                    files.append(f.name)
+
+    scripts = {}
+    for f in files:
+        p = Path(str(cwd.cwd()) + "/" + f)
+        script_name = str(p.name)[:]
+        script_dir  = str(p.parts[-2])
+        script_path = str(p)[:]
+        script_ext  = str(p.suffix)[:]
+        scripts[script_name] = Script(script_name, script_path, script_dir, script_ext)
+
+    if args.list:
+        print_info("Printing out available files:")
+        for script in scripts:
+            print_warn(f"{script}")
+        sys.exit(0)
 
     if args.sudo:
         NEED_ADMIN=True
 
     if args.host != "Nothing":
         SINGLE_HOST=True
-    elif args.local and args.host != "Nothing":
-        LOCAL=True
-    elif args.local and args.host == "Nothing":
-        raise Exception("If [ -l, --local ] is specified you need to specify a [ -i, --host ] host as well!")
 
     if args.command != "Nothing":
         SINGLE_COMMAND=True
@@ -426,18 +564,5 @@ if __name__ == "__main__":
 
     if args.ssh:
         FORCE_SSH=True
-
-    files = []
-    if args.files:
-        files = args.files.readlines()
-
-    scripts = {}
-    for f in files:
-        p = Path(str(cwd.cwd()) + "/" + f)
-        script_name = str(p.name)[:-1]
-        script_dir  = str(p.parts[-2])
-        script_path = str(p)[:-1]
-        script_ext  = str(p.suffix)[:-1]
-        scripts[script_name] = Script(script_name, script_path, script_dir, script_ext)
 
     Threader(config, scripts, args.task, args.command, args.arguments, args.host)
