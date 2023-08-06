@@ -1,16 +1,28 @@
 #!/usr/bin/python3
-import sys, os
+import sys
 import json
-import pypsrp
-from pypsrp._utils import to_bytes, to_string
-from pypsrp.exceptions import AuthenticationError, WinRMError
-from pypsrp.powershell import PowerShell, RunspacePool
-from pypsrp.wsman import NAMESPACES, WSMan
 import argparse
-from time import sleep
-import concurrent.futures
 from pathlib import Path
-from fabric2 import Connection, Config
+
+from .modules import utils
+from .modules import connector
+from .modules import classes
+
+BANNER = f'''{utils.HEADER}{utils.BOLD}
+            .______  ._______._______ .___    ._______   ____   ____
+    .       :_ _   \ : .____/: ____  ||   |   : .___  \  \   \_/   / .
+            |   |   || : _/\ |    :  ||   |   | :   |  |  \___ ___/    .
+       .    | . |   ||   /  \|   |___||   |/\ |     :  |    |   |   
+            |. ____/ |_.: __/|___|    |   /  \ \_. ___/     |___|   .
+            :/         :/            |______/   :/                 
+  .         :                                   :                     .
+            |               .          .         |         .  .  
+                          .                      |                .
+        .         .           . |       .           .
+             .                       .           .           .      .
+          .         .    .               .             .         .
+                                                         by: ⧸𝒸o𝓏⧸
+{utils.ENDC}'''
 
 # https://github.com/pyinvoke/invoke/issues/15
 # https://github.com/algrebe/python-tee
@@ -36,452 +48,6 @@ if missing:
     python = sys.executable
     subprocess.check_call([python, '-m', 'pip', 'install', *missing], stdout=subprocess.DEVNULL)
 
-NEED_ADMIN=False
-SINGLE_HOST=False
-SINGLE_COMMAND=False
-SINGLE_TASK=False
-EXTRA_ARGS=False
-LOGGING=False
-QUIET=True
-FORCE_SSH=False
-LOCAL=False
-
-HEADER = '\033[95m'
-INFO = '\033[92m'
-WARN = '\033[93m'
-FAIL = '\033[91m'
-ENDC = '\033[0m'
-BOLD = '\033[1m'
-UNDERLINE = '\033[4m'
-
-BANNER = f'''{HEADER}{BOLD}
-            .______  ._______._______ .___    ._______   ____   ____
-    .       :_ _   \ : .____/: ____  ||   |   : .___  \  \   \_/   / .
-            |   |   || : _/\ |    :  ||   |   | :   |  |  \___ ___/    .
-       .    | . |   ||   /  \|   |___||   |/\ |     :  |    |   |   
-            |. ____/ |_.: __/|___|    |   /  \ \_. ___/     |___|   .
-            :/         :/            |______/   :/                 
-  .         :                                   :                     .
-            |               .          .         |         .  .  
-                          .                      |                .
-        .         .           . |       .           .
-             .                       .           .           .      .
-          .         .    .               .             .         .
-                                                         by: ⧸𝒸o𝓏⧸
-{ENDC}'''
-
-def print_info(msg: str = None) -> None:
-    if msg:
-        print(f"{INFO}{msg}{ENDC}")
-
-def print_warn(msg: str = None) -> None:
-    if msg:
-        print(f"{WARN}{msg}{ENDC}")
-
-def print_fail(msg: str = None) -> None:
-    if msg:
-        print(f"{FAIL}{msg}{ENDC}")
-
-def str_to_bool(value):
-    if value.lower() in {'false', 'f', '0', 'no', 'n'}:
-        return False
-    elif value.lower() in {'true', 't', '1', 'yes', 'y'}:
-        return True
-    raise ValueError(f'{value} is not a valid boolean value')
-
-class Script:
-    def __init__(self, name, path, directory, extension):
-        self.name      = name
-        self.path      = path
-        self.directory = directory
-        self.extension = extension
-
-    def name(self):
-        return self.name
-
-    def path(self):
-        return self.path
-
-    def directory(self):
-        return self.directory
-
-    def extension(self):
-        return self.extension
-
-def print_results(conn, results: list):
-    for result in results:
-        print(f"{INFO}[{conn}]{ENDC}: {result}")
-
-def execute_task(conn, os, script_name, script_path, script_ext, command, arguments, sudo_password) -> list:
-    results = []
-    try:
-        if os == "linux":
-            PREAMBLE = f"sudo -H -u root -S < <(echo '{sudo_password}') "
-            if SINGLE_COMMAND:
-                CMD=""
-                if EXTRA_ARGS:
-                    CMD=f"{command} {arguments}"
-                else:
-                    CMD=f"{command}"
-                if NEED_ADMIN:
-                    results.append(conn.run(PREAMBLE + CMD, warn=True, echo=QUIET, hide=True))
-                else:
-                    results.append(conn.run(CMD, warn=True, echo=QUIET, hide=True))
-            elif script_ext == ".sh":
-                CMD=""
-                if EXTRA_ARGS:
-                    CMD=f"bash {script_name} {arguments}"
-                else:
-                    CMD=f"bash {script_name}"
-                if NEED_ADMIN:
-                    conn.put(script_path, script_name)  
-                    conn.run("chmod +x " + script_name, warn=True, echo=QUIET)
-                    results.append(conn.run(PREAMBLE + CMD, warn=True, echo=QUIET, hide=True))
-                    conn.run("rm -rf " + script_name, warn=True, echo=QUIET)
-                else:
-                    conn.put(script_path, script_name)
-                    conn.run("chmod +x " + script_name, warn=True, echo=QUIET)
-                    results.append(conn.run(CMD, warn=True, echo=QUIET, hide=True))
-                    conn.run("rm -rf " + script_name, warn=True, echo=QUIET)
-            elif script_ext == ".py2":
-                CMD=""
-                if EXTRA_ARGS:
-                    CMD=f"python2 {script_name} {arguments}"
-                else:
-                    CMD=f"python2 {script_name}"
-                if NEED_ADMIN:
-                    conn.put(script_path, script_name)
-                    results.append(conn.run(PREAMBLE + CMD, warn=True, echo=QUIET, hide=True))
-                else:
-                    results.append(conn.run(CMD, warn=True, echo=QUIET, hide=True))
-            elif script_ext == ".py3":
-                CMD=""
-                if EXTRA_ARGS:
-                    CMD=f"python3 {script_name} {arguments}"
-                else:
-                    CMD=f"python3 {script_name}"
-                if NEED_ADMIN:
-                    conn.put(script_path, script_name)
-                    results.append(conn.run(PREAMBLE + CMD, warn=True, echo=QUIET, hide=True))
-                else:
-                    results.append(conn.run(CMD, warn=True, echo=QUIET, hide=True))
-            elif script_ext == ".py":
-                CMD=""
-                if EXTRA_ARGS:
-                    CMD=f"python {script_name} {arguments}"
-                else:
-                    CMD=f"python {script_name}"
-                if NEED_ADMIN:
-                    conn.put(script_path, script_name)
-                    results.append(conn.run(PREAMBLE + CMD, warn=True, echo=QUIET, hide=True))
-                else:
-                    results.append(conn.run(CMD, warn=True, echo=QUIET, hide=True))
-            elif script_ext == ".pl":
-                CMD=""
-                if EXTRA_ARGS:
-                    CMD=f"perl {script_name} {arguments}"
-                else:
-                    CMD=f"perl {script_name}"
-                if NEED_ADMIN:
-                    conn.put(script_path, script_name)
-                    results.append(conn.run(PREAMBLE + CMD, warn=True, echo=QUIET, hide=True))
-                else:
-                    results.append(conn.run(CMD, warn=True, echo=QUIET, hide=True))
-                if NEED_ADMIN:
-                    conn.put(script_path, script_name)
-                    results.append(conn.run(PREAMBLE + CMD, warn=True, echo=QUIET, hide=True))
-                else:
-                    results.append(conn.run(CMD, warn=True, echo=QUIET, hide=True))
-        if os == "windows":
-            with RunspacePool(conn) as runspace:
-                ps = PowerShell(runspace)
-                if SINGLE_COMMAND:
-                    ps.add_cmdlet(command).add_argument(arguments)
-                    ps.invoke()
-                    results.append(ps.output)
-                else:
-                    with open(f"{script_path}", 'r') as f:
-                        script = f.read()[:-1]
-                        if script_ext == ".ps1":
-                            ps.add_script(script)
-                            ps.invoke()
-                            print(ps.output)
-                        elif script_ext == ".bat":
-                            command=f"C:\\Windows\\System32\\cmd.exe /c '{script}'"
-                            ps.add_script(command)
-                            ps.invoke()
-                            results.append(ps.output)
-    except Exception as e:
-        print_fail(f"Exception: {e}")
-        pass
-    return results
-
-def execute_script(conn, os, host, scripts, task, command, arguments):
-    LOOP=True
-    SUDO_PASS=""
-    print_info(f"Connecting to {host}")
-    if os == "linux":
-        SUDO_PASS = conn['sudo']['password']
-    if SINGLE_TASK:
-        LOOP=False
-    for script_name, script in scripts.items():
-        script_path = script.path
-        script_ext  = script.extension
-        if LOOP:
-            results = execute_task(conn, os, script_name, script_path, script_ext, command, arguments, SUDO_PASS)
-            print_results(conn, results)
-        else:
-            if SINGLE_COMMAND:
-                results = execute_task(conn, os, script_name, script_path, script_ext, command, arguments, SUDO_PASS)
-                print_results(conn, results)
-                break
-            if script_name == task:
-                results = execute_task(conn, os, script_name, script_path, script_ext, command, arguments, SUDO_PASS)
-                print_results(conn, results)
-                break
-            else:
-                continue
-        sleep(1)
-    if LOGGING:
-        if os == "linux":
-            PREAMBLE = f"sudo -H -u root -S < <(echo '{SUDO_PASS}') "
-            conn.run(f"{PREAMBLE} chown 1000:1000 *.log", echo=QUIET)
-            conn.run(f"tar cvf ./{host}_{host}_log.tar ./*.log 1>/dev/null", echo=QUIET)
-            conn.get(f"{host}_{host}_log.tar", f"{host}_{host}_log.tar")
-            conn.run(f"{PREAMBLE} rm -rf ./*.log && {PREAMBLE} rm -rf ./{host}_{host}_log.tar", echo=QUIET)
-        elif os == "windows":
-            None
-
-class Threader:
-    def __init__(self, config, scripts, task, comamnd, arguments, target_host):
-        self.workers = 25
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as ex:
-            futures = []
-            if SINGLE_HOST:
-                host = target_host
-                USE_SSHKEY=False
-                if host in config.keys():
-                    values = config[f"{host}"]
-                    if "username" in values:
-                        username = values["username"]
-                    else:
-                        raise Exception(f"{FAIL}{host} needs a username!{ENDC}")
-                    if "address" in values:
-                        address  = values["address"]
-                    else:
-                        raise Exception(f"{FAIL}{host} needs an address!{ENDC}")
-                    if "os" in values:
-                        os       = values["os"]
-                    else:
-                        raise Exception(f"{FAIL}{host} needs an os!{ENDC}")
-                    if "port" in values:
-                        port     = values["port"]
-                    else:
-                        print_warn(f"{host} using default port for protocol")
-                    if "password" in values:
-                        password = values["password"]
-                    elif "sshkey" in values:
-                        USE_SSHKEY=True
-                        sshkey   = values["sshkey"]
-                    else:
-                        raise Exception(f"{host} needs either a password or sshkey!")
-                    
-                    if os == "linux" or FORCE_SSH:
-                        if port == "":
-                            port = "22"
-                        if not USE_SSHKEY:
-                            ssh_config = Config(
-                                overrides={
-                                    'sudo': { 
-                                        'user': 'root', 
-                                        'password': password },
-                                        'connect_kwargs': { 
-                                            'password': password 
-                                        }
-                                    }
-                                ) if NEED_ADMIN else Config(
-                                overrides={
-                                    'user': username, 
-                                    'password': password,
-                                    'connect_kwargs': {
-                                        'password': password 
-                                        }
-                                    }
-                                )
-                            try:
-                                with Connection(host=address, user=username,
-                                                port=port, config=ssh_config) as c:
-                                        futures.append(
-                                        ex.submit(execute_script, c, os, host, scripts, task, comamnd, arguments)
-                                    )
-                            except Exception as e:
-                                print_fail(f"Exception: {e}")
-                        else:
-                            sshkey_passphrase = ""
-                            sshkey_response = input("Is the private key encrypted? (y/n): ")[:1]
-                            if sshkey_response == "y":
-                                sshkey_passphrase = input("Enter the private SSH key passphrase : ")
-                            ssh_config = Config(
-                                overrides={
-                                    'sudo': { 
-                                        'user': 'root', 
-                                        'password': password }, 
-                                        'connect_kwargs': { 
-                                            'key_filename': sshkey, 
-                                            'passphrase': sshkey_passphrase, 
-                                            'look_for_keys': False 
-                                        }
-                                    }
-                                ) if NEED_ADMIN else Config(
-                                overrides={
-                                    'user': username, 
-                                    'password': password,
-                                    'connect_kwargs': { 
-                                        'key_filename': sshkey, 
-                                        'passphrase': sshkey_passphrase, 
-                                        'look_for_keys': False 
-                                    }
-                                }
-                            )
-                            try:
-                                with Connection(host=address, user=username,
-                                                port=port, config=ssh_config) as c:
-                                    futures.append(
-                                        ex.submit(execute_script, c, os, host, scripts, task, comamnd, arguments)
-                                    )
-                            except Exception as e:
-                                print_fail(f"Exception: {e}")
-                    # Otherwise we use WinRM for Windows
-                    elif os == "windows":
-                        if port == "":
-                            port = "5985"
-                        try:
-                            with WSMan(server=address, port=port, username=username, password=password, ssl=False, cert_validation=False) as conn:
-                                futures.append(
-                                    ex.submit(execute_script, conn, os, host, scripts, task, comamnd, arguments)
-                                )
-                        except Exception as e:
-                                print_fail(f"Exception: {e.with_traceback} {e.args}")
-            else:
-                for host, values in config.items():
-                    USE_SSHKEY=False
-                    username = values["username"]
-                    address  = values["address"]
-                    os       = values["os"]
-                    port     = values["port"]
-                    
-                    if "username" in values:
-                        username = values["username"]
-                    else:
-                        raise Exception(f"{FAIL}{host} needs a username!{ENDC}")
-                    if "address" in values:
-                        address  = values["address"]
-                    else:
-                        raise Exception(f"{FAIL}{host} needs an address!{ENDC}")
-                    if "os" in values:
-                        os       = values["os"]
-                    else:
-                        raise Exception(f"{FAIL}{host} needs an os!{ENDC}")
-                    if "port" in values:
-                        port     = values["port"]
-                    else:
-                        print_warn(f"{host} using default port for protocol")
-                    if "password" in values:
-                        password = values["password"]
-                    elif "sshkey" in values:
-                        USE_SSHKEY=True
-                        sshkey   = values["sshkey"]
-                    else:
-                        raise Exception(f"{host} needs either a password or sshkey!")
-                    
-                    if os == "linux" or FORCE_SSH:
-                        if port == "":
-                            port = "22"
-                        if not USE_SSHKEY:
-                            ssh_config = Config(
-                                overrides={
-                                    'sudo': { 
-                                        'user': 'root', 
-                                        'password': password 
-                                    },
-                                        'connect_kwargs': { 
-                                            'password': password 
-                                        }
-                                    }
-                                ) if NEED_ADMIN else Config(
-                                overrides={
-                                    'user': username, 
-                                    'password': password,
-                                    'connect_kwargs': {
-                                        'password': password 
-                                        }
-                                    }
-                                )
-                            try:
-                                with Connection(host=address, user=username,
-                                                port=port, config=ssh_config) as c:
-                                        futures.append(
-                                        ex.submit(execute_script, c, os, host, scripts, task, comamnd, arguments)
-                                    )
-                            except Exception as e:
-                                print_fail(f"Exception: {e}")
-                        else:
-                            sshkey_passphrase = ""
-                            sshkey_response = input("Is the private key encrypted? (y/n): ")[:1]
-                            if sshkey_response == "y":
-                                sshkey_passphrase = input("Enter the private SSH key passphrase : ")
-                            ssh_config = Config(
-                                overrides={
-                                    'sudo': { 
-                                        'user': 'root', 
-                                        'password': password 
-                                    }, 
-                                        'connect_kwargs': { 
-                                            'key_filename': sshkey, 
-                                            'passphrase': sshkey_passphrase, 
-                                            'look_for_keys': False 
-                                        }
-                                    }
-                                ) if NEED_ADMIN else Config(
-                                overrides={
-                                    'user': username, 
-                                    'password': password,
-                                    'connect_kwargs': { 
-                                        'key_filename': sshkey, 
-                                        'passphrase': sshkey_passphrase, 
-                                        'look_for_keys': False 
-                                    }
-                                }
-                            )
-                            try:
-                                with Connection(host=address, user=username,
-                                                port=port, config=ssh_config) as c:
-                                    futures.append(
-                                        ex.submit(execute_script, c, os, host, scripts, task, comamnd, arguments)
-                                    )
-                            except Exception as e:
-                                print_fail(f"Exception: {e}")
-                    # Otherwise we use WinRM for Windows
-                    elif os == "windows":
-                        if port == "":
-                            port = "5985"
-                        try:
-                            with WSMan(server=address, port=port, username=username, password=password, ssl=False, cert_validation=False) as conn:
-                                futures.append(
-                                    ex.submit(execute_script, conn, os, host, scripts, task, comamnd, arguments)
-                                )
-                        except Exception as e:
-                                print_fail(f"Exception: {e.with_traceback} {e.args}")
-            completed, not_complete = concurrent.futures.wait(futures)
-            for result in completed:
-                if not result:
-                    print("{}".format(result.result()))
-                else:
-                    try:
-                        pass
-                    except:
-                        pass
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
             prog='Deploy',
@@ -492,11 +58,11 @@ if __name__ == "__main__":
     parser.add_argument('-t', '--task', type=str, action='store', default="Nothing", help='Run a specific file on all hosts')
     parser.add_argument('-a', '--arguments', type=str, action='store', default="Nothing", help='Use with --task if task needs arguments')
     parser.add_argument('-i', '--host', type=str, action='store', default="Nothing", help='If specifed with only run against declared host')
-    parser.add_argument('-S', '--sudo', type=str_to_bool, nargs='?', const=True, default=False, help='Executes user with sudo')
-    parser.add_argument('-v', '--log', type=str_to_bool, nargs='?', const=True, default=False, help='Set this flag if you want to have log files generated on the host downloaded locally')
-    parser.add_argument('-q', '--quiet', type=str_to_bool, nargs='?', const=True, default=False, help='Set this flag for very little output')
-    parser.add_argument('-s', '--ssh', type=str_to_bool, nargs='?', const=True, default=False, help='Set this flag to use SSH for Windows')
-    parser.add_argument('-L', '--list', type=str_to_bool, nargs='?', const=True, default=False, help='List hosts from config')
+    parser.add_argument('-S', '--sudo', type=utils.str_to_bool, nargs='?', const=True, default=False, help='Executes user with sudo')
+    parser.add_argument('-v', '--log', type=utils.str_to_bool, nargs='?', const=True, default=False, help='Set this flag if you want to have log files generated on the host downloaded locally')
+    parser.add_argument('-q', '--quiet', type=utils.str_to_bool, nargs='?', const=True, default=False, help='Set this flag for very little output')
+    parser.add_argument('-s', '--ssh', type=utils.str_to_bool, nargs='?', const=True, default=False, help='Set this flag to use SSH for Windows')
+    parser.add_argument('-L', '--list', type=utils.str_to_bool, nargs='?', const=True, default=False, help='List hosts from config')
     args = parser.parse_args()
 
     if not args.quiet:
@@ -506,63 +72,58 @@ if __name__ == "__main__":
     config = json.load(args.config)
 
     if args.list:
-        print_info("Printing out available hosts:")
+        utils.print_info("Printing out available hosts:")
         for host, values in config.items():
-            print_warn(f"{host} @ {values['address']}")
+            utils.print_warn(f"{host} @ {values['address']}")
         print("")
 
     cwd = Path(".")
 
-    ext = None
+    settings: classes.Settings = None
+    
+    exts = None
     if args.ext != "Nothing":
-        ext = args.ext
+        exts = args.ext
     else:
-        ext = [ "py", "sh", "bat", "ps", "pl" ]
-
-    files = []
-    for f in Path(cwd).rglob("*"):
-        if f.is_file():
-            f_parts = f.name.split('.')
-            if len(f_parts) is 2:
-                f_ext = f_parts[1]
-                if f_ext is not None and f_ext in ext:
-                    files.append(f.name)
-
-    scripts = {}
-    for f in files:
-        p = Path(str(cwd.cwd()) + "/" + f)
-        script_name = str(p.name)[:]
-        script_dir  = str(p.parts[-2])
-        script_path = str(p)[:]
-        script_ext  = str(p.suffix)[:]
-        scripts[script_name] = Script(script_name, script_path, script_dir, script_ext)
+        exts = [ "py3", "py", "sh", "bat", "ps", "pl" ]
+    
+    files = utils.parse_files(current_dir=cwd,
+                              accepted_exts=exts)
+    scripts = utils.load_scripts(file_list=files, 
+                                 current_dir=cwd)
 
     if args.list:
-        print_info("Printing out available files:")
+        utils.print_info("Printing out available files:")
         for script in scripts:
-            print_warn(f"{script}")
+            utils.print_warn(f"{script}")
         sys.exit(0)
 
     if args.sudo:
-        NEED_ADMIN=True
+        settings.admin=True
 
     if args.host != "Nothing":
-        SINGLE_HOST=True
+        settings.single_host=True
 
     if args.command != "Nothing":
-        SINGLE_COMMAND=True
-        SINGLE_TASK=True
+        settings.single_command=True
+        settings.single_task=True
     
     if args.task != "Nothing":
-        SINGLE_TASK=True
+        settings.single_task=True
 
     if args.arguments != "Nothing":
-        EXTRA_ARGS=True
+        settings.extra_args=True
     
     if args.log:
-        LOGGING=True
+        settings.logging=True
 
     if args.ssh:
-        FORCE_SSH=True
+        settings.force_ssh=True
 
-    Threader(config, scripts, args.task, args.command, args.arguments, args.host)
+    connector.Threader(config=config, 
+                       scripts=scripts, 
+                       task=args.task, 
+                       comamnd=args.command, 
+                       arguments=args.arguments, 
+                       host=args.host, 
+                       settings=settings)
