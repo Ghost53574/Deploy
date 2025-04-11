@@ -1,170 +1,31 @@
 import concurrent.futures
 from pypsrp.wsman import WSMan
 from fabric2 import Connection, Config
-from pypsrp.powershell import PowerShell, RunspacePool
+
+import netmiko
 
 import utils
 import classes
+import executor
 
-def execute_task(conn, 
-                 os, 
-                 script_name, 
-                 script_path, 
-                 script_ext, 
-                 command, 
-                 arguments, 
-                 sudo_password,
-                 settings: classes.Settings) -> list:
-    results = []
-    try:
-        if os == "linux":
-            PREAMBLE = f"sudo -H -u root -S < <(echo '{sudo_password}') "
-            if settings.single_command:
-                CMD=""
-                if settings.extra_args:
-                    CMD=f"{command} {arguments}"
-                else:
-                    CMD=f"{command}"
-                if settings.admin:
-                    results.append(conn.run(PREAMBLE + CMD, warn=True, echo=settings.quiet, hide=True))
-                else:
-                    results.append(conn.run(CMD, warn=True, echo=settings.quiet, hide=True))
-            elif script_ext == ".sh":
-                CMD=""
-                if settings.extra_args:
-                    CMD=f"bash {script_name} {arguments}"
-                else:
-                    CMD=f"bash {script_name}"
-                if settings.admin:
-                    conn.put(script_path, script_name)  
-                    conn.run("chmod +x " + script_name, warn=True, echo=settings.quiet)
-                    results.append(conn.run(PREAMBLE + CMD, warn=True, echo=settings.quiet, hide=True))
-                    conn.run("rm -rf " + script_name, warn=True, echo=settings.quiet)
-                else:
-                    conn.put(script_path, script_name)
-                    conn.run("chmod +x " + script_name, warn=True, echo=settings.quiet)
-                    results.append(conn.run(CMD, warn=True, echo=settings.quiet, hide=True))
-                    conn.run("rm -rf " + script_name, warn=True, echo=settings.quiet)
-            elif script_ext == ".py2":
-                CMD=""
-                if settings.extra_args:
-                    CMD=f"python2 {script_name} {arguments}"
-                else:
-                    CMD=f"python2 {script_name}"
-                if settings.admin:
-                    conn.put(script_path, script_name)
-                    results.append(conn.run(PREAMBLE + CMD, warn=True, echo=settings.quiet, hide=True))
-                else:
-                    results.append(conn.run(CMD, warn=True, echo=settings.quiet, hide=True))
-            elif script_ext == ".py3":
-                CMD=""
-                if settings.extra_args:
-                    CMD=f"python3 {script_name} {arguments}"
-                else:
-                    CMD=f"python3 {script_name}"
-                if settings.admin:
-                    conn.put(script_path, script_name)
-                    results.append(conn.run(PREAMBLE + CMD, warn=True, echo=settings.quiet, hide=True))
-                else:
-                    results.append(conn.run(CMD, warn=True, echo=settings.quiet, hide=True))
-            elif script_ext == ".py":
-                CMD=""
-                if settings.extra_args:
-                    CMD=f"python {script_name} {arguments}"
-                else:
-                    CMD=f"python {script_name}"
-                if settings.admin:
-                    conn.put(script_path, script_name)
-                    results.append(conn.run(PREAMBLE + CMD, warn=True, echo=settings.quiet, hide=True))
-                else:
-                    results.append(conn.run(CMD, warn=True, echo=settings.quiet, hide=True))
-            elif script_ext == ".pl":
-                CMD=""
-                if settings.extra_args:
-                    CMD=f"perl {script_name} {arguments}"
-                else:
-                    CMD=f"perl {script_name}"
-                if settings.admin:
-                    conn.put(script_path, script_name)
-                    results.append(conn.run(PREAMBLE + CMD, warn=True, echo=settings.quiet, hide=True))
-                else:
-                    results.append(conn.run(CMD, warn=True, echo=settings.quiet, hide=True))
-        if os == "windows":
-            with RunspacePool(conn) as runspace:
-                ps = PowerShell(runspace)
-                if settings.single_command:
-                    ps.add_cmdlet(command).add_argument(arguments)
-                    ps.invoke()
-                    results.append(ps.output)
-                else:
-                    with open(f"{script_path}", 'r') as f:
-                        script = f.read()[:-1]
-                        if script_ext == ".ps1":
-                            ps.add_script(script)
-                            ps.invoke()
-                            print(ps.output)
-                        elif script_ext == ".bat":
-                            command=f"C:\\Windows\\System32\\cmd.exe /c '{script}'"
-                            ps.add_script(command)
-                            ps.invoke()
-                            results.append(ps.output)
-    except Exception as e:
-        utils.print_fail(f"Exception: {e}")
-        pass
-    return results
-
-def execute_script(conn, 
-                   os, 
-                   host, 
-                   scripts, 
-                   task, 
-                   command, 
-                   arguments,
-                   settings: classes.Settings):
-    LOOP=True
-    SUDO_PASS=""
-    utils.print_info(f"Connecting to {host}")
-    if os == "linux":
-        SUDO_PASS = conn['sudo']['password']
-    if settings.single_task:
-        LOOP=False
-    for script_name, script in scripts.items():
-        script_path = script.path
-        script_ext  = script.extension
-        if LOOP:
-            results = execute_task(conn, os, script_name, script_path, script_ext, command, arguments, SUDO_PASS)
-            utils.print_results(conn, results)
-        else:
-            if settings.single_command:
-                results = execute_task(conn, os, script_name, script_path, script_ext, command, arguments, SUDO_PASS)
-                utils.print_results(conn, results)
-                break
-            if script_name == task:
-                results = execute_task(conn, os, script_name, script_path, script_ext, command, arguments, SUDO_PASS)
-                utils.print_results(conn, results)
-                break
-            else:
-                continue
-    if settings.logging:
-        if os == "linux":
-            PREAMBLE = f"sudo -H -u root -S < <(echo '{SUDO_PASS}') "
-            conn.run(f"{PREAMBLE} chown 1000:1000 *.log", echo=settings.quiet)
-            conn.run(f"tar cvf ./{host}_{host}_log.tar ./*.log 1>/dev/null", echo=settings.quiet)
-            conn.get(f"{host}_{host}_log.tar", f"{host}_{host}_log.tar")
-            conn.run(f"{PREAMBLE} rm -rf ./*.log && {PREAMBLE} rm -rf ./{host}_{host}_log.tar", echo=settings.quiet)
-        elif os == "windows":
-            None
+DEFAULT_WORKER_THREADS = 25
 
 class Threader:
     def __init__(self, 
-                 config, 
-                 scripts, 
+                 config: dict, 
+                 scripts: dict, 
                  task: str, 
                  comamnd: str, 
                  arguments: str, 
                  target_host: str,
                  settings: classes.Settings):
-        self.workers = 25
+        self.workers = DEFAULT_WORKER_THREADS
+        
+        hosts = {}
+        for hostname, host_config in config.items():
+            hosts[hostname] = classes.Host(
+                config=host_config
+            )
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as ex:
             futures = []
             if settings.single_host:
@@ -224,7 +85,17 @@ class Threader:
                                                 port=port, 
                                                 config=ssh_config) as c:
                                         futures.append(
-                                        ex.submit(execute_script, c, os, host, scripts, task, comamnd, arguments)
+                                            ex.submit(
+                                                executor.execute_script, 
+                                                c, 
+                                                os, 
+                                                host, 
+                                                scripts, 
+                                                task, 
+                                                comamnd, 
+                                                arguments, 
+                                                settings
+                                        )
                                     )
                             except Exception as e:
                                 utils.print_fail(f"Exception: {e}")
@@ -261,7 +132,17 @@ class Threader:
                                                 port=port, 
                                                 config=ssh_config) as c:
                                     futures.append(
-                                        ex.submit(execute_script, c, os, host, scripts, task, comamnd, arguments)
+                                            ex.submit(
+                                                executor.execute_script, 
+                                                c, 
+                                                os, 
+                                                host, 
+                                                scripts, 
+                                                task, 
+                                                comamnd, 
+                                                arguments, 
+                                                settings
+                                        )
                                     )
                             except Exception as e:
                                 utils.print_fail(f"Exception: {e}")
@@ -277,8 +158,18 @@ class Threader:
                                        ssl=False, 
                                        cert_validation=False) as conn:
                                 futures.append(
-                                    ex.submit(execute_script, conn, os, host, scripts, task, comamnd, arguments)
-                                )
+                                            ex.submit(
+                                                executor.execute_script, 
+                                                conn, 
+                                                os, 
+                                                host, 
+                                                scripts, 
+                                                task, 
+                                                comamnd, 
+                                                arguments, 
+                                                settings
+                                        )
+                                    )
                         except Exception as e:
                                 utils.print_fail(f"Exception: {e.with_traceback} {e.args}")
             else:
@@ -340,7 +231,17 @@ class Threader:
                                 with Connection(host=address, user=username,
                                                 port=port, config=ssh_config) as c:
                                         futures.append(
-                                        ex.submit(execute_script, c, os, host, scripts, task, comamnd, arguments)
+                                            ex.submit(
+                                                executor.execute_script, 
+                                                c, 
+                                                os, 
+                                                host, 
+                                                scripts, 
+                                                task, 
+                                                comamnd, 
+                                                arguments, 
+                                                settings
+                                        )
                                     )
                             except Exception as e:
                                 utils.print_fail(f"Exception: {e}")
@@ -378,7 +279,17 @@ class Threader:
                                                 port=port, 
                                                 config=ssh_config) as c:
                                     futures.append(
-                                        ex.submit(execute_script, c, os, host, scripts, task, comamnd, arguments)
+                                            ex.submit(
+                                                executor.execute_script, 
+                                                c, 
+                                                os, 
+                                                host, 
+                                                scripts, 
+                                                task, 
+                                                comamnd, 
+                                                arguments, 
+                                                settings
+                                        )
                                     )
                             except Exception as e:
                                 utils.print_fail(f"Exception: {e}")
@@ -389,8 +300,18 @@ class Threader:
                         try:
                             with WSMan(server=address, port=port, username=username, password=password, ssl=False, cert_validation=False) as conn:
                                 futures.append(
-                                    ex.submit(execute_script, conn, os, host, scripts, task, comamnd, arguments)
-                                )
+                                            ex.submit(
+                                                executor.execute_script, 
+                                                c, 
+                                                os, 
+                                                host, 
+                                                scripts, 
+                                                task, 
+                                                comamnd, 
+                                                arguments, 
+                                                settings
+                                        )
+                                    )
                         except Exception as e:
                                 utils.print_fail(f"Exception: {e.with_traceback} {e.args}")
             completed, not_complete = concurrent.futures.wait(futures)

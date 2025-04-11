@@ -1,23 +1,48 @@
-class Script:
+from typing import Optional
+
+class Host():
+    username: Optional[str]
+    password: Optional[str]
+    os: Optional[str]
+    address: Optional[str]
+    port: Optional[str]
+    ssh_keyfile: Optional[str]
+    ssh_key_pass: Optional[str]
+    
+    def __init__(
+            self, 
+            config: dict
+        ):
+        self.username = config.get("username")
+        self.password = config.get("password")
+        self.os = config.get("os")
+        self.address = config.get("address")
+        self.port = config.get("port")
+        self.ssh_keyfile = config.get("ssh_keyfile")
+        self.ssh_key_pass = config.get("ssh_key_pass")
+
+class Script():
+    name: str
+    path: str
+    directory: str
+    extension: str
+    
     def __init__(self, name, path, directory, extension):
         self.name      = name
         self.path      = path
         self.directory = directory
         self.extension = extension
 
-    def name(self):
-        return self.name
-
-    def path(self):
-        return self.path
-
-    def directory(self):
-        return self.directory
-
-    def extension(self):
-        return self.extension
-
-class Settings:
+class Settings():
+    admin: bool
+    single_host: bool
+    single_command: bool
+    extra_args: bool
+    logging: bool
+    quiet: bool
+    force_ssh: bool
+    local: bool
+    
     def __init__(self, 
                  admin: bool = False, 
                  single_host: bool = False, 
@@ -37,30 +62,3 @@ class Settings:
         self.quiet          = quiet
         self.force_ssh      = force_ssh
         self.local          = local
-
-    def admin(self):
-        return self.admin
-
-    def single_host(self):
-        return self.path
-
-    def single_command(self):
-        return self.path
-
-    def single_task(self):
-        return self.path
-
-    def extra_args(self):
-        return self.extra_args
-
-    def logging(self):
-        return self.path
-
-    def quiet(self):
-        return self.path
-
-    def force_ssh(self):
-        return self.path
-
-    def local(self):
-        return self.path

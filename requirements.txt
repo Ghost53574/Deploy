@@ -1,3 +1,4 @@
 pypsrp
 fabric2
-paramiko==2.7.2
+paramiko
+netmiko

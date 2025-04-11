@@ -1,12 +1,38 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 import sys
+sys.dont_write_bytecode = True
 import json
 import argparse
 from pathlib import Path
 
-from .modules import utils
-from .modules import connector
-from .modules import classes
+import logging
+import typing
+
+class CustomFormatter(logging.Formatter):
+    grey = '\033[92m'
+    yellow = '\033[93m'
+    red = '\033[91m'
+    bold_red = f'\033[1m{red}'
+    reset = '\033[0m'
+    fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
+
+    FORMATS = {
+        logging.DEBUG: f"{grey}{fmt}{reset}",
+        logging.INFO: f"{grey}{fmt}{reset}",
+        logging.WARNING: f"{yellow}{fmt}{reset}",
+        logging.ERROR: f"{red}{fmt}{reset}",
+        logging.CRITICAL: f"{bold_red}{fmt}{reset}"
+    }
+
+    def format(self, record):
+        return logging.Formatter(self.FORMATS.get(record.levelno)).format(record)
+
+log = logging.Logger(__name__, level=4)
+handler = logging.StreamHandler()
+handler.setFormatter(CustomFormatter())
+log.addHandler(handler)
+
+from modules import utils
 
 BANNER = f'''{utils.HEADER}{utils.BOLD}
             .______  ._______._______ .___    ._______   ____   ____
@@ -46,7 +72,10 @@ missing = required - installed
 
 if missing:
     python = sys.executable
-    subprocess.check_call([python, '-m', 'pip', 'install', *missing], stdout=subprocess.DEVNULL)
+    subprocess.check_call([python, '-m', 'pip', 'install', '--break-system-packages', '--user', *missing], stdout=subprocess.DEVNULL)
+    
+from modules import connector
+from modules import classes
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -79,7 +108,7 @@ if __name__ == "__main__":
 
     cwd = Path(".")
 
-    settings: classes.Settings = None
+    settings = classes.Settings()
     
     exts = None
     if args.ext != "Nothing":
@@ -87,10 +116,14 @@ if __name__ == "__main__":
     else:
         exts = [ "py3", "py", "sh", "bat", "ps", "pl" ]
     
-    files = utils.parse_files(current_dir=cwd,
-                              accepted_exts=exts)
-    scripts = utils.load_scripts(file_list=files, 
-                                 current_dir=cwd)
+    files = utils.parse_files(
+        current_dir=cwd,
+        accepted_exts=exts
+    )
+    scripts = utils.load_scripts(
+        file_list=files, 
+        current_dir=cwd
+    )
 
     if args.list:
         utils.print_info("Printing out available files:")
@@ -120,10 +153,12 @@ if __name__ == "__main__":
     if args.ssh:
         settings.force_ssh=True
 
-    connector.Threader(config=config, 
-                       scripts=scripts, 
-                       task=args.task, 
-                       comamnd=args.command, 
-                       arguments=args.arguments, 
-                       host=args.host, 
-                       settings=settings)
+    connector.Threader(
+        config=config, 
+        scripts=scripts, 
+        task=args.task, 
+        comamnd=args.command, 
+        arguments=args.arguments,
+        target_host=args.host,
+        settings=settings
+    )
