@@ -28,7 +28,9 @@ class BaseConnection(ABC):
     Abstract base class for all connection types.
     Provides common interface for executing commands and scripts.
     """
-    def __init__(self, host: Host, settings: Settings):
+    def __init__(self, 
+        host: Host, 
+        settings: Settings):
         """
         Initialize a connection to a host.
         
@@ -67,7 +69,12 @@ class BaseConnection(ABC):
         pass
     
     @abstractmethod
-    def execute_command(self, command: str, arguments: str = "", admin: bool = False) -> Any:
+    def execute_command(
+        self, 
+        command: str, 
+        arguments: str = "", 
+        admin: bool = False
+        ) -> Any:
         """
         Execute a command on the host.
         
@@ -85,9 +92,14 @@ class BaseConnection(ABC):
         pass
     
     @abstractmethod
-    def execute_script(self, script_path: str, script_name: str, 
-                      script_type: str, arguments: str = "",
-                      admin: bool = False) -> Any:
+    def execute_script(
+        self, 
+        script_path: str, 
+        script_name: str, 
+        script_type: str, 
+        arguments: str = "",
+        admin: bool = False
+        ) -> Any:
         """
         Execute a script on the host.
         
@@ -237,7 +249,12 @@ class SSHConnection(BaseConnection):
             config=ssh_config
         )
     
-    def execute_command(self, command: str, arguments: str = "", admin: bool = False) -> Any:
+    def execute_command(
+        self, 
+        command: str, 
+        arguments: str = "", 
+        admin: bool = False
+        ) -> Any:
         """
         Execute a command on the host via SSH.
         
@@ -276,9 +293,14 @@ class SSHConnection(BaseConnection):
         except Exception as e:
             raise DeployConnectionError(f"Failed to execute command '{command}' on {self.host}: {str(e)}")
     
-    def execute_script(self, script_path: str, script_name: str, 
-                      script_type: str, arguments: str = "",
-                      admin: bool = False) -> Any:
+    def execute_script(
+        self, 
+        script_path: str, 
+        script_name: str, 
+        script_type: str, 
+        arguments: str = "",
+        admin: bool = False
+        ) -> Any:
         """
         Execute a script on the host via SSH.
         
@@ -380,7 +402,12 @@ class WinRMConnection(BaseConnection):
         except Exception as e:
             raise DeployConnectionError(f"Failed to connect to {self.host}: {str(e)}")
     
-    def execute_command(self, command: str, arguments: str = "", admin: bool = False) -> Any:
+    def execute_command(
+        self, 
+        command: str, 
+        arguments: str = "", 
+        admin: bool = False
+        ) -> Any:
         """
         Execute a command on the host via WinRM.
         
@@ -423,9 +450,14 @@ class WinRMConnection(BaseConnection):
         except Exception as e:
             raise DeployConnectionError(f"Failed to execute command '{command}' on {self.host}: {str(e)}")
     
-    def execute_script(self, script_path: str, script_name: str, 
-                      script_type: str, arguments: str = "",
-                      admin: bool = False) -> Any:
+    def execute_script(
+        self, 
+        script_path: str, 
+        script_name: str, 
+        script_type: str, 
+        arguments: str = "",
+        admin: bool = False
+        ) -> Any:
         """
         Execute a script on the host via WinRM.
         
@@ -488,7 +520,10 @@ class ConnectionFactory:
     Factory for creating appropriate connection objects.
     """
     @staticmethod
-    def create_connection(host: Host, settings: Settings) -> BaseConnection:
+    def create_connection(
+        host: Host, 
+        settings: Settings
+        ) -> BaseConnection:
         """
         Create a connection to a host based on its OS type.
         
@@ -501,13 +536,9 @@ class ConnectionFactory:
             
         Raises:
             ValueError: If the host OS is not supported
-        """
-        # Force SSH if specified in settings
-        if settings.force_ssh:
-            return SSHConnection(host, settings)
-        
+        """        
         # Create connection based on OS
-        if host.os == "linux":
+        if host.os == "linux" or settings.force_ssh:
             return SSHConnection(host, settings)
         elif host.os == "windows":
             return WinRMConnection(host, settings)

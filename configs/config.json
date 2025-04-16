@@ -1,7 +1,7 @@
 {
-    "codespace": {
-        "username": "a",
-        "password": "b",
+    "test": {
+        "username": "root",
+        "password": "root",
         "os": "linux",
         "address": "127.0.0.1",
         "port": 2222

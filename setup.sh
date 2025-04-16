@@ -42,8 +42,8 @@ echo -e "${BLUE}Python version: $python_version${NC}"
 
 # Install dependencies
 echo -e "${GREEN}Installing Python dependencies...${NC}"
-python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements.txt
+python3 -m pip install --upgrade pip --user --break-system-packages
+python3 -m pip install -r requirements.txt --user --break-system-packages
 
 # Create a test configuration file if it doesn't exist
 if [ ! -f "configs/test_config.json" ]; then

@@ -1,0 +1,2 @@
+hostname,os,ip,tcp_ports,username,password,purpose,notes
+localhost,linux,127.0.0.1,22,$(whoami),,Test host,Local testing
