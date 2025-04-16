@@ -12,7 +12,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}====================================================${NC}"
-echo -e "${BLUE}   Integrated Deploy, Bottering, and Booter Setup   ${NC}"
+echo -e "${BLUE}   Deploy Setup   ${NC}"
 echo -e "${BLUE}====================================================${NC}"
 
 # Check if running as root and warn
@@ -30,7 +30,6 @@ fi
 echo -e "${GREEN}Creating directory structure...${NC}"
 mkdir -p scripts
 mkdir -p configs
-mkdir -p bot_data
 
 # Check Python version
 echo -e "${GREEN}Checking Python version...${NC}"
@@ -44,7 +43,7 @@ echo -e "${BLUE}Python version: $python_version${NC}"
 # Install dependencies
 echo -e "${GREEN}Installing Python dependencies...${NC}"
 python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements_integrated.txt
+python3 -m pip install -r requirements.txt
 
 # Create a test configuration file if it doesn't exist
 if [ ! -f "configs/test_config.json" ]; then
@@ -80,7 +79,7 @@ if [ ! "$(ls -A scripts)" ]; then
     echo -e "${GREEN}Creating test script...${NC}"
     cat > scripts/test.sh << 'EOL'
 #!/bin/bash
-# Test script for integrated_deploy.py
+# Test script for deploy.py
 echo "Hello from $(hostname)"
 echo "Current user: $(whoami)"
 echo "Current directory: $(pwd)"
@@ -91,21 +90,18 @@ fi
 
 # Set appropriate permissions
 echo -e "${GREEN}Setting permissions...${NC}"
-chmod +x integrated_deploy.py
+chmod +x deploy.py
 
 echo -e "${BLUE}====================================================${NC}"
 echo -e "${GREEN}Setup completed successfully!${NC}"
 echo -e "${BLUE}====================================================${NC}"
 echo -e "${YELLOW}Example commands:${NC}"
 echo -e "  # List available hosts from JSON config:"
-echo -e "  python3 integrated_deploy.py -j configs/test_config.json -L"
+echo -e "  python3 deploy.py -j configs/test_config.json -L"
 echo -e ""
 echo -e "  # Execute test script on local host:"
-echo -e "  python3 integrated_deploy.py -j configs/test_config.json -t test.sh"
+echo -e "  python3 deploy.py -j configs/test_config.json -t test.sh"
 echo -e ""
 echo -e "  # List available hosts from CSV:"
-echo -e "  python3 integrated_deploy.py -c configs/test_targets.csv -L"
-echo -e ""
-echo -e "  # Deploy C2 component (requires proper interface):"
-echo -e "  python3 integrated_deploy.py -j configs/test_config.json -b -I eth0"
+echo -e "  python3 deploy.py -c configs/test_targets.csv -L"
 echo -e "${BLUE}====================================================${NC}"

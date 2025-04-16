@@ -7,7 +7,7 @@ import concurrent.futures
 import logging
 import queue
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union, Callable
+from typing import Any, Dict, List, Optional
 
 from modules.classes import Host, Script, Settings, ValidationError
 from modules.connections import ConnectionFactory
@@ -274,6 +274,5 @@ class TaskManager:
                     )
                 else:
                     raise ValueError("Task has neither script nor command")
-        except Exception as e:
-            logger.error(f"Error executing task {task}: {e}")
+        except Exception:
             raise

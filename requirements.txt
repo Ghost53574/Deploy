@@ -1,26 +1,7 @@
-# Integrated Deploy, Bottering, and Booter Requirements
-
-# Core Dependencies
-fabric2>=2.7.0          # SSH operations and remote execution
-paramiko>=2.7.2         # SSH protocol implementation (specific version for RSA key fix)
-pypsrp>=0.5.0           # Windows Remote PowerShell
-netmiko>=3.3.0          # Network device SSH connections
-
-# Bottering Dependencies
-faker>=8.0.0            # Generate fake data for implants
-ipaddress>=1.0.23       # IP address manipulation
-twisted>=21.2.0         # Asynchronous networking
-pyOpenSSL>=20.0.1       # SSL/TLS toolkit
-service_identity>=21.1.0 # Service identity verification
-pycryptodome>=3.10.1    # Cryptographic primitives (modern replacement for pycrypto)
-
-# Booter and C2 Server Dependencies
-flask>=2.0.1            # Web framework for C2 server
-werkzeug>=2.0.1         # WSGI utilities
-jinja2>=3.0.1           # Templating engine
-httpbin>=0.7.0          # HTTP Request & Response service
-
-# Additional Utilities
-requests>=2.25.1        # HTTP requests
-pyyaml>=5.4.1           # YAML parsing
-python-dateutil>=2.8.1  # Date utilities
+fabric2>=2.7.0
+paramiko>=2.7.2
+pypsrp>=0.5.0
+netmiko>=3.3.0
+requests>=2.25.1
+pyyaml>=5.4.1
+python-dateutil>=2.8.1

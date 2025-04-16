@@ -1,21 +1,14 @@
 #!/usr/bin/env python3
-"""
-Integrated Deploy, Bottering, and Booter - Combined Command & Control Framework
-
-This script combines the improved Deploy architecture with Bottering's CSV parsing
-and Booter's C2 capabilities to create a comprehensive deployment and control framework.
-"""
 import sys
 import logging
 import argparse
 from pathlib import Path
-from modules import utils
 
 # Make sure not to create __pycache__ files
 sys.dont_write_bytecode = True
 
 # Custom modules from Deploy
-from modules.classes import Host, Script, Settings, ValidationError
+from modules.classes import Settings
 from modules.task_manager import TaskManager
 import modules.utils as utils
 
@@ -33,7 +26,7 @@ except ImportError:
     fake = Faker()
 
 # Banner
-BANNER = f'''{utils.HEADER}{utils.BOLD}
+BANNER = f'''\033[1m\033[91m
             .______  ._______._______ .___    ._______   ____   ____
     .       :_ _   \ : .____/: ____  ||   |   : .___  \  \   \_/   / .
             |   |   || : _/\ |    :  ||   |   | :   |  |  \___ ___/    .
@@ -41,13 +34,12 @@ BANNER = f'''{utils.HEADER}{utils.BOLD}
             |. ____/ |_.: __/|___|    |   /  \ \_. ___/     |___|   .
             :/         :/            |______/   :/                 
   .         :                                   :                     .
-            |               INTEGRATED DEPLOY         .  .  
-                          .           C2             |                .
+            |                                         .  .  
+                          .                          |                .
         .         .           . |       .           .
              .                       .           .           .      .
           .         .    .               .             .         .
-                                                         by: ⧸𝒸o𝓏⧸
-{utils.ENDC}'''
+                                                         by: ⧸𝒸o𝓏⧸\033[0m'''
 
 class CustomFormatter(logging.Formatter):
     """Custom formatter with colored output."""
@@ -79,7 +71,6 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     return logger
 
 def main():
-    """Main entry point."""
     # Parse command line arguments
     parser = argparse.ArgumentParser(
         prog='Integrated Deploy',
@@ -94,6 +85,7 @@ def main():
     # General options
     parser.add_argument('-q', '--quiet', action='store_true', help='Minimal output')
     parser.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
+    parser.add_argument('-d', '--scripts', type=str, default="scripts", help='Path to scripts directory')
     
     # Execution options
     parser.add_argument('-i', '--host', type=str, help='Target specific host')
@@ -105,11 +97,6 @@ def main():
     task_group = parser.add_mutually_exclusive_group()
     task_group.add_argument('-k', '--command', type=str, help='Execute a command on hosts')
     task_group.add_argument('-t', '--task', type=str, help='Execute a specific script')
-    
-    # C2 options
-    c2_group = parser.add_argument_group('C2 Options')
-    c2_group.add_argument('-I', '--interface', type=str, help='Network interface for C2 server')
-    c2_group.add_argument('-p', '--port', type=int, default=8080, help='Port for C2 server')
     
     # Additional options
     parser.add_argument('-a', '--arguments', type=str, help='Arguments for command or script')
@@ -130,16 +117,6 @@ def main():
     if not args.quiet:
         print(BANNER)
     
-    # Get interface IP if specified
-    interface_ip = None
-    if args.interface:
-        interface_ip = get_ip_address(args.interface)
-        if interface_ip:
-            utils.print_info(f"Interface {args.interface} has IP: {interface_ip}")
-        else:
-            utils.print_fail(f"Could not get IP address for interface {args.interface}")
-            return 1
-    
     # Create settings object
     settings = Settings(
         admin=args.sudo,
@@ -157,62 +134,64 @@ def main():
     hosts = {}
     if args.csv:
         # Accepted OS filter
-        accepted_os = args.os.split(',') if args.os else ['ubuntu', 'debian', 'linux', 'centos', 'windows']
+        accepted_os = args.os.split(',') if args.os else [
+            'linux',
+            'windows'
+        ]
         
         # Parse CSV file
         try:
-            records = parse_csv_file(args.csv)
-            utils.print_info(f"Loaded {len(records)} records from CSV file")
+            records = utils.parse_csv_file(args.csv)
+            logger.info(f"Loaded {len(records)} records from CSV file")
             
             # Filter by network if specified
             if args.network:
                 networks = [args.network]
-                network_db = add_ip_to_networks(records, networks)
+                network_db = utils.add_ip_to_networks(records, networks)
                 filtered_records = []
                 for network, records_in_network in network_db.items():
                     filtered_records.extend(records_in_network)
                 records = filtered_records
-                utils.print_info(f"Filtered to {len(records)} records in network {args.network}")
+                logger.info(f"Filtered to {len(records)} records in network {args.network}")
             
-            # Create hosts
-            hosts = create_hosts_from_csv(records, accepted_os)
+            hosts = utils.create_hosts_from_csv(records, accepted_os)
         except Exception as e:
-            utils.print_fail(f"Error loading CSV: {e}")
+            logger.error(f"Error loading CSV: {e}")
             return 1
     elif args.json:
         # Load JSON config
         try:
-            config = load_config(args.json)
-            hosts = create_hosts_from_json(config)
+            config = utils.load_config(args.json)
+            hosts = utils.create_hosts_from_json(config)
         except Exception as e:
-            utils.print_fail(f"Error loading JSON config: {e}")
+            logger.error(f"Error loading JSON config: {e}")
             return 1
-    
     # Filter to specific host if requested
     if args.host:
         if args.host in hosts:
             hosts = {args.host: hosts[args.host]}
         else:
-            utils.print_fail(f"Host {args.host} not found")
+            logger.error(f"Host {args.host} not found")
             return 1
     
-    # Report number of hosts
-    utils.print_info(f"Loaded {len(hosts)} hosts")
-    
-    # If list mode, just show hosts and exit
-    if args.list:
-        for hostname, host in hosts.items():
-            utils.print_warn(f"{hostname} @ {host.address} ({host.os})")
-        return 0
+    logger.info(f"Loaded {len(hosts)} hosts")
     
     # Find scripts in scripts directory
-    scripts_dir = Path("./scripts")
+    scripts_dir = Path(args.scripts)
     if not scripts_dir.exists():
-        utils.print_warn("Scripts directory not found, using current directory")
+        logger.warning("Scripts directory not found, using current directory")
         scripts_dir = Path(".")
     
     exts = ["py3", "py", "sh", "bat", "ps1", "pl"]
-    scripts = find_scripts(scripts_dir, exts)
+    scripts = utils.find_scripts(scripts_dir, exts)
+
+    if args.list:
+        logger.warning("Listing available hosts and scripts:")
+        for hostname, host in hosts.items():
+            logger.info(f"Host: {hostname}@{host.address}")
+        for script in scripts:
+            logger.info(f"Script: {script}")
+        return 0
     
     # Create task manager
     task_manager = TaskManager(settings)
@@ -223,7 +202,7 @@ def main():
     try:
         if args.command:
             # Execute a command on hosts
-            utils.print_info(f"Executing command: {args.command}")
+            logger.info(f"Executing command: {args.command}")
             
             for hostname in hosts:
                 task_manager.add_command_task(
@@ -236,10 +215,10 @@ def main():
         elif args.task:
             # Execute a specific script
             if args.task not in scripts:
-                utils.print_fail(f"Script '{args.task}' not found")
+                logger.error(f"Script '{args.task}' not found")
                 return 1
                 
-            utils.print_info(f"Executing script: {args.task}")
+            logger.info(f"Executing script: {args.task}")
             
             for hostname in hosts:
                 task_manager.add_script_task(
@@ -249,16 +228,19 @@ def main():
                     admin=args.sudo
                 )
         else:
-            utils.print_fail("No action specified. Use --command, --task, or --botnet.")
-            return 1
-            
+            logger.info(f"Executing all scripts in {scripts_dir}")
+            for script in task_manager.scripts:
+                task_manager.add_task_for_all_hosts(
+                script_name=script
+            )
+
     except Exception as e:
-        utils.print_fail(f"Error setting up tasks: {e}")
+        logger.error(f"Error setting up tasks: {e}")
         return 1
     
     # Execute tasks
     try:
-        utils.print_info("Executing tasks...")
+        logger.info("Executing tasks...")
         results = task_manager.execute_tasks()
         
         # Print results
@@ -268,21 +250,22 @@ def main():
         for result in results:
             if result.success:
                 successes += 1
-                utils.print_info(f"SUCCESS: {result.task}")
+                logger.info(f"SUCCESS: {result.task}")
                 if result.output:
-                    print(f"  Output: {result.output}")
+                    print(f"{result.output}")
             else:
                 failures += 1
-                utils.print_fail(f"FAILED: {result.task}")
+                logger.error(f"FAILED: {result.task}")
                 if result.error:
-                    print(f"  Error: {result.error}")
+                    logger.error(f"Error: {result.error}")
         
-        utils.print_info(f"Task execution completed: {successes} successful, {failures} failed")
-        
+        logger.info(f"Task execution completed: {successes} successful, {failures} failed")
     except Exception as e:
-        utils.print_fail(f"Error executing tasks: {e}")
+        logger.error(f"Error executing tasks: {e}")
         return 1
-    
+    except KeyboardInterrupt as e:
+        logger.error(f"Inturrupted")
+        return 1
     return 0
 
 if __name__ == "__main__":

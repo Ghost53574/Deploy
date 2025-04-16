@@ -6,6 +6,7 @@ import base64
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional
+from modules.classes import Host, Script, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -115,8 +116,7 @@ def csv_to_json(csv_file_path):
         csv_reader = csv.DictReader(csvfile)
         for row in csv_reader:
             data.append(row)
-
-    print(json.dumps(data, indent=4))
+    return json.dumps(data, indent=4)
     
 class Field:
     """Enumeration of CSV fields."""
@@ -135,6 +135,7 @@ def parse_csv_file(file_path: str) -> List[Dict[str, str]]:
     
     records = []
     with open(file_path, 'r') as csvfile:
+        logger.info(f"Opened CSV: {file_path}")
         reader = csv.DictReader(csvfile)
         for row in reader:
             records.append(row)
@@ -293,7 +294,7 @@ def create_hosts_from_json(config: Dict) -> Dict[str, Host]:
         try:
             hosts[hostname] = Host(hostname=hostname, config=host_config)
         except ValidationError as e:
-            utils.print_fail(f"Invalid host configuration: {e}")
+            logger.error(f"Invalid host configuration: {e}")
     return hosts
 
 def create_hosts_from_csv(records: List[Dict[str, str]], accepted_os: Optional[List[str]] = None) -> Dict[str, Host]:
@@ -330,7 +331,7 @@ def create_hosts_from_csv(records: List[Dict[str, str]], accepted_os: Optional[L
         try:
             hosts[hostname] = Host(hostname=hostname, config=host_config)
         except ValidationError as e:
-            utils.print_fail(f"Invalid host configuration for {hostname}: {e}")
+            logger.error(f"Invalid host configuration for {hostname}: {e}")
     
     return hosts
 
@@ -339,7 +340,7 @@ def find_scripts(current_dir: Path, accepted_exts: List[str]) -> Dict[str, Scrip
     scripts = {}
     
     # Find files with matching extensions
-    files = utils.parse_files(current_dir, accepted_exts)
+    files = parse_files(current_dir, accepted_exts)
     
     # Create Script objects
     for file_name in files:
@@ -357,6 +358,6 @@ def find_scripts(current_dir: Path, accepted_exts: List[str]) -> Dict[str, Scrip
                 extension=script_ext
             )
         except ValidationError as e:
-            utils.print_fail(f"Invalid script: {e}")
+            logger.error(f"Invalid script: {e}")
     
     return scripts
