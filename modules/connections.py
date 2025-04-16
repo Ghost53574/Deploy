@@ -14,7 +14,7 @@ from pypsrp.wsman import WSMan
 from pypsrp.powershell import PowerShell, RunspacePool
 
 import modules.utils as utils
-from modules.classes import Host, Settings, ValidationError
+from modules.classes import Host, Settings
 
 # Configure logger
 logger = logging.getLogger(__name__)

@@ -254,6 +254,7 @@ class TaskManager:
         
         # Create connection
         connection = ConnectionFactory.create_connection(task.host, self.settings)
+        logger.info(f"Connection: {connection}")
         
         try:
             # Connect and execute based on task type
