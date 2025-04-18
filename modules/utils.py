@@ -145,28 +145,41 @@ def parse_csv_file(file_path: str) -> List[Dict[str, str]]:
 def match_ip_to_network(ip_address: str, network: str) -> bool:
     """Check if an IP address belongs to a network."""
     import ipaddress
-    
     try:
-        if '/' in ip_address:  # Handle CIDR notation in IP
+        if '/' in ip_address:
             ip = ipaddress.ip_address(ip_address.split('/')[0])
         else:
             ip = ipaddress.ip_address(ip_address)
-        
         net = ipaddress.ip_network(network, strict=False)
         return ip in net
     except ValueError:
         return False
 
+def get_network_from_ip(ip_address: str, netmask: str) -> str:
+    import ipaddress
+    if '/' in ip_address:
+        ip = ipaddress.ip_address(ip_address.split('/')[0])
+    else:
+        ip = ipaddress.ip_address(ip_address)
+    net = ipaddress.IPv4Network(f"{ip}/{netmask}", strict=False)
+    return str(net.network_address)
+
+def get_hosts_from_network(network_address: str, netmask: str) -> List[str]:
+    import ipaddress
+    net = ipaddress.IPv4Network(f"{network_address}/{netmask}", strict=False)
+    hosts = []
+    for ip in net.hosts():
+        hosts.append(ip)
+    return hosts
+
 def add_ip_to_networks(records: List[Dict[str, str]], networks: List[str]) -> Dict[str, List[Dict[str, str]]]:
     """Organize records by network."""
     network_db = {}
-    
     for network in networks:
         network_db[network] = []
         for record in records:
             if Field.GENERIC_IP in record and match_ip_to_network(record[Field.GENERIC_IP], network):
                 network_db[network].append(record)
-    
     return network_db
 
 def parse_ports(ports_str: str) -> List[int]:
@@ -319,20 +332,24 @@ def create_hosts_from_csv(records: List[Dict[str, str]], accepted_os: Optional[L
         if not ip_addr:
             continue
         
+        port = None
+        tcp_ports = record.get(Field.TCP_PORTS_OPEN, "")
+        if tcp_ports:
+            port = tcp_ports.split(' ')[0]
+        
         # Create a host config compatible with Deploy's Host class
         host_config = {
             "username": username,
             "password": password,
             "os": "linux" if check_os(os_name, ["linux", "ubuntu", "debian", "centos"]) else "windows",
-            "address": ip_addr.split('/')[0],  # Remove CIDR notation
-            "port": ""  # Default port will be set by Host class
+            "address": ip_addr.split('/')[0],
+            "port": port if port else ""
         }
         
         try:
             hosts[hostname] = Host(hostname=hostname, config=host_config)
         except ValidationError as e:
             logger.error(f"Invalid host configuration for {hostname}: {e}")
-    
     return hosts
 
 def find_scripts(current_dir: Path, accepted_exts: List[str]) -> Dict[str, Script]:

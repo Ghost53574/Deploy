@@ -285,9 +285,9 @@ class SSHConnection(BaseConnection):
                 if not sudo_password:
                     sudo_password = getpass.getpass("Enter sudo password: ")
                 preamble = f"sudo -H -u root -S < <(echo '{sudo_password}') "
-                result = self.connection.run(preamble + cmd, warn=True, echo=not self.settings.quiet, hide=self.settings.quiet)
+                result = self.connection.run(preamble + cmd, warn=True, echo=not self.settings.quiet or (not self.settings.quiet and self.settings.verbose), hide=self.settings.quiet)
             else:
-                result = self.connection.run(cmd, warn=True, echo=not self.settings.quiet, hide=self.settings.quiet)
+                result = self.connection.run(cmd, warn=True, echo=not self.settings.quiet or (not self.settings.quiet and self.settings.verbose), hide=self.settings.quiet)
             
             return result
         except Exception as e:
@@ -329,7 +329,7 @@ class SSHConnection(BaseConnection):
             
             # Make script executable for sh/bash scripts
             if script_type == "bash":
-                self.connection.run(f"chmod +x {script_name}", warn=True, echo=not self.settings.quiet)
+                self.connection.run(f"chmod +x {script_name}", warn=True, echo=not self.settings.quiet or (not self.settings.quiet and self.settings.verbose))
             
             # Build command based on script type
             if script_type == "bash":
@@ -357,12 +357,12 @@ class SSHConnection(BaseConnection):
                 if not sudo_password:
                     sudo_password = getpass.getpass("Enter sudo password: ")
                 preamble = f"sudo -H -u root -S < <(echo '{sudo_password}') "
-                result = self.connection.run(preamble + cmd, warn=True, echo=not self.settings.quiet, hide=self.settings.quiet)
+                result = self.connection.run(preamble + cmd, warn=True, echo=not self.settings.quiet or (not self.settings.quiet and self.settings.verbose))
             else:
-                result = self.connection.run(cmd, warn=True, echo=not self.settings.quiet, hide=self.settings.quiet)
+                result = self.connection.run(cmd, warn=True, echo=not self.settings.quiet or (not self.settings.quiet and self.settings.verbose), hide=self.settings.quiet)
             
             # Clean up the script file
-            self.connection.run(f"rm -f {script_name}", warn=True, echo=not self.settings.quiet)
+            self.connection.run(f"rm -f {script_name}", warn=True, echo=not self.settings.quiet or (not self.settings.quiet and self.settings.verbose))
             
             return result
         except Exception as e:

@@ -172,7 +172,7 @@ class Settings:
                  logging: bool = False, 
                  quiet: bool = False, 
                  force_ssh: bool = False,
-                 local: bool = False,
+                 verbose: bool = False,
                  max_workers: int = 25):
         """
         Initialize settings with optional parameters.
@@ -197,7 +197,7 @@ class Settings:
         self.logging = logging
         self.quiet = quiet
         self.force_ssh = force_ssh
-        self.local = local
+        self.verbose = verbose
         self.max_workers = max_workers
     
     def __str__(self) -> str:
@@ -217,11 +217,12 @@ class Settings:
             settings.append("logging")
         if self.quiet:
             settings.append("quiet")
+        if self.verbose:
+            settings.append("verbose")
         if self.force_ssh:
             settings.append("force_ssh")
         if self.local:
             settings.append("local")
-        
         if not settings:
             return "default settings"
         return ", ".join(settings)

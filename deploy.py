@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import logging.config
 import sys
 import logging
 import argparse
@@ -8,7 +9,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 
 # Custom modules from Deploy
-from modules.classes import Settings
+from modules.classes import Settings, Host
 from modules.task_manager import TaskManager
 import modules.utils as utils
 
@@ -36,18 +37,27 @@ BANNER = f'''
 
 \x1b[1;35m                                               by ⧸𝒸o𝓏⧸\x1b[0m
 '''
-class CustomFormatter(logging.Formatter):
+class DispatchingFormatter(logging.Formatter):
+    def __init__(self, formatters, default_formatter):
+        self._formatters = formatters
+        self._default_formatter = default_formatter
+
+    def format(self, record):
+        formatter = self._formatters.get(record.name, self._default_formatter)
+        return formatter.format(record)
+
+class CustomGeneralLogFormatter(logging.Formatter):
     """Custom formatter with colored output."""
+    green = '\033[92m'
     grey = '\033[92m'
     yellow = '\033[93m'
     red = '\033[91m'
     bold_red = f'\033[1m{red}'
     reset = '\033[0m'
     fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
-
     FORMATS = {
         logging.DEBUG: f"{grey}{fmt}{reset}",
-        logging.INFO: f"{grey}{fmt}{reset}",
+        logging.INFO: f"{green}{fmt}{reset}",
         logging.WARNING: f"{yellow}{fmt}{reset}",
         logging.ERROR: f"{red}{fmt}{reset}",
         logging.CRITICAL: f"{bold_red}{fmt}{reset}"
@@ -56,20 +66,44 @@ class CustomFormatter(logging.Formatter):
     def format(self, record):
         return logging.Formatter(self.FORMATS.get(record.levelno)).format(record)
 
-def setup_logging(verbose: bool = False) -> logging.Logger:
+class CustomMessageFormatter(logging.Formatter):
+    """Custom formatter with colored output."""
+    bg_green = '\033[102m'
+    bg_yellow = '\033[43m'
+    green = '\033[92m'
+    grey = '\033[90m'
+    yellow = '\033[93m'
+    red = '\033[101m'
+    black = '\033[30m'
+    reset = '\033[0m'
+    fmt = "%(message)s"
+    FORMATS = {
+        logging.DEBUG: f"{grey}{fmt}{reset}",
+        logging.INFO: f"{bg_green}{black}{fmt}{reset}",
+        logging.WARNING: f"{bg_yellow}{black}{fmt}{reset}",
+        logging.ERROR: f"{red}{fmt}{reset}",
+        logging.CRITICAL: f"{red}{fmt}{reset}"
+    }
+
+    def format(self, record):
+        return logging.Formatter(self.FORMATS.get(record.levelno)).format(record)
+
+def setup_logging(verbose: bool = False):
     """Set up logging with custom formatter."""
-    logger = logging.Logger(__name__, level=logging.DEBUG if verbose else logging.INFO)
+    logging.getLogger().setLevel(logging.DEBUG if verbose else logging.INFO)
     handler = logging.StreamHandler()
-    handler.setFormatter(CustomFormatter())
-    logger.addHandler(handler)
-    
-    return logger
+    handler.setFormatter(DispatchingFormatter({
+            'default': CustomMessageFormatter()
+        },
+        CustomGeneralLogFormatter(),
+    ))
+    logging.getLogger().addHandler(handler)
 
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        prog='Integrated Deploy',
-        description='Integrated deployment and control framework'
+        prog='Deploy',
+        description='Deployment and control framework'
     )
     
     # Input sources - choose one
@@ -84,6 +118,7 @@ def main():
     
     # Execution options
     parser.add_argument('-i', '--host', type=str, help='Target specific host')
+    parser.add_argument('-l', '--local', type=str, help='Execute tasks or commands locally "username,password"')
     parser.add_argument('-S', '--sudo', action='store_true', help='Execute with admin privileges')
     parser.add_argument('-s', '--ssh', action='store_true', help='Force SSH for Windows hosts')
     parser.add_argument('-w', '--workers', type=int, default=25, help='Number of concurrent workers')
@@ -106,61 +141,75 @@ def main():
     args = parser.parse_args()
     
     # Set up logging
-    logger = setup_logging(args.verbose)
+    setup_logging()
+    logger = logging.getLogger("default")
     
     # Print banner unless quiet mode
     if not args.quiet:
         print(BANNER)
-    
-    # Create settings object
-    settings = Settings(
-        admin=args.sudo,
-        single_host=bool(args.host),
-        single_command=bool(args.command),
-        single_task=bool(args.task),
-        extra_args=bool(args.arguments),
-        logging=False,
-        quiet=args.quiet,
-        force_ssh=args.ssh,
-        max_workers=args.workers
-    )
-    
+
     # Load hosts from CSV or JSON
     hosts = {}
-    if args.csv:
-        # Accepted OS filter
-        accepted_os = args.os.split(',') if args.os else [
-            'linux',
-            'windows'
-        ]
-        
-        # Parse CSV file
-        try:
-            records = utils.parse_csv_file(args.csv)
-            logger.info(f"Loaded {len(records)} records from CSV file")
+    if args.local is not None:
+        import platform
+        creds = args.local.split(',')
+        hosts["localhost"] = Host(
+            hostname="localhost",
+            config={
+                "username": creds[0],
+                "password": creds[1],
+                "os": platform.system().lower(),
+                "address": "127.0.0.1",
+                "port": 5985
+            }
+        )
+    else:
+        if args.csv:
+            # Accepted OS filter
+            accepted_os = args.os.split(',') if args.os else [
+                'linux',
+                'windows'
+            ]
             
-            # Filter by network if specified
-            if args.network:
-                networks = [args.network]
-                network_db = utils.add_ip_to_networks(records, networks)
-                filtered_records = []
-                for network, records_in_network in network_db.items():
-                    filtered_records.extend(records_in_network)
-                records = filtered_records
-                logger.info(f"Filtered to {len(records)} records in network {args.network}")
-            
-            hosts = utils.create_hosts_from_csv(records, accepted_os)
-        except Exception as e:
-            logger.error(f"Error loading CSV: {e}")
-            return 1
-    elif args.json:
-        # Load JSON config
-        try:
-            config = utils.load_config(args.json)
-            hosts = utils.create_hosts_from_json(config)
-        except Exception as e:
-            logger.error(f"Error loading JSON config: {e}")
-            return 1
+            # Parse CSV file
+            try:
+                records = utils.parse_csv_file(args.csv)
+                logger.info(f"Loaded {len(records)} records from CSV file")
+                
+                # Filter by network if specified
+                if args.network:
+                    networks = [args.network]
+                    filtered_records = []
+                    for _, records_in_network in utils.add_ip_to_networks(records, networks).items():
+                        filtered_records.extend(records_in_network)
+                    records = filtered_records
+                    logger.info(f"Filtered to {len(records)} records in network {args.network}")
+                
+                hosts = utils.create_hosts_from_csv(records, accepted_os)
+            except Exception as e:
+                logger.error(f"Error loading CSV: {e}")
+                return 1
+        elif args.json:
+            # Load JSON config
+            try:
+                config = utils.load_config(args.json)
+                if args.network:
+                    filtered_config = {}
+                    for network in [args.network]:
+                        for hostname, host_config in config.items():
+                            ip_address = host_config.get("address")
+                            if host_config.get("address") is not None:
+                                if utils.match_ip_to_network(
+                                    ip_address=ip_address,
+                                    network=network
+                                ):
+                                    filtered_config[hostname] = host_config
+                    hosts = utils.create_hosts_from_json(filtered_config)
+                else:
+                    hosts = utils.create_hosts_from_json(config)
+            except Exception as e:
+                logger.error(f"Error loading JSON config: {e}")
+                return 1
     # Filter to specific host if requested
     if args.host:
         if args.host in hosts:
@@ -182,11 +231,44 @@ def main():
 
     if args.list:
         logger.warning("Listing available hosts and scripts:")
+        logger.warning("-----------------------------")
         for hostname, host in hosts.items():
-            logger.info(f"Host: {hostname}@{host.address}")
-        for script in scripts:
-            logger.info(f"Script: {script}")
+            if args.verbose:
+                logger.info(f"Host: {hostname}")
+                logger.warning("-----------------------------")
+                logger.info(f"Address: {host.address}")
+                logger.info(f"Port: {host.port}")
+                logger.info(f"OS: {host.os}")
+                logger.info(f"Username: {host.username}")
+                logger.info(f"Password: {host.password}")
+            else:
+                logger.info(f"Host: {hostname}@{host.address}")
+            logger.warning("-----------------------------")
+        for script_name, script_data in scripts.items():
+            if args.verbose:
+                logger.info(f"Script: {script_name}")
+                logger.warning("-----------------------------")
+                logger.info(f"Path: {script_data.path}")
+                logger.info(f"Extension: {script_data.extension}")
+                logger.info(f"Executor Type: {script_data.get_executor_type()}")
+            else:
+                logger.info(f"Script: {script_name}")
+            logger.warning("-----------------------------")
         return 0
+    
+    # Create settings object
+    settings = Settings(
+        admin=args.sudo,
+        single_host=bool(args.host),
+        single_command=bool(args.command),
+        single_task=bool(args.task),
+        extra_args=bool(args.arguments),
+        logging=False,
+        quiet=args.quiet,
+        force_ssh=args.ssh,
+        verbose=args.verbose,
+        max_workers=args.workers
+    )
     
     # Create task manager
     task_manager = TaskManager(settings)

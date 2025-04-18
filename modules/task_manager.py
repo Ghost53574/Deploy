@@ -150,6 +150,8 @@ class TaskManager:
             arguments=arguments,
             admin=admin
         )
+        if self.settings.verbose:
+                logger.debug(f"Adding {task} to {hostname}")
         self.add_task(task)
     
     def add_script_task(self, hostname: str, script_name: str, arguments: str = "", admin: bool = False) -> None:
@@ -176,6 +178,8 @@ class TaskManager:
             arguments=arguments,
             admin=admin
         )
+        if self.settings.verbose:
+                logger.debug(f"Adding {task} to {hostname}")
         self.add_task(task)
     
     def add_task_for_all_hosts(self, script_name: Optional[str] = None, command: Optional[str] = None, 
@@ -205,6 +209,8 @@ class TaskManager:
                 arguments=arguments,
                 admin=admin
             )
+            if self.settings.verbose:
+                logger.debug(f"Adding {task} to {hostname}")
             self.add_task(task)
     
     def execute_tasks(self) -> List[TaskResult]:
@@ -215,25 +221,32 @@ class TaskManager:
             List of task results
         """
         results = []
-        
+        import threading
+        import signal
+        exiting = threading.Event()
+        def sig_handler(signum, frame):
+            exiting.set()
+        signal.signal(signal.SIGTERM, sig_handler)
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.settings.max_workers) as executor:
             futures = {}
-            
-            # Submit all tasks to the executor
-            while not self.task_queue.empty():
-                task = self.task_queue.get()
-                future = executor.submit(self._execute_task, task)
-                futures[future] = task
-            
-            # Collect results as they complete
-            for future in concurrent.futures.as_completed(futures):
-                task = futures[future]
-                try:
-                    result = future.result()
-                    results.append(TaskResult(task=task, success=True, output=result))
-                except Exception as e:
-                    results.append(TaskResult(task=task, success=False, error=e))
-        
+            try:
+                # Submit all tasks to the executor
+                while not self.task_queue.empty():
+                    task = self.task_queue.get()
+                    future = executor.submit(self._execute_task, task)
+                    futures[future] = task
+                
+                # Collect results as they complete
+                for future in concurrent.futures.as_completed(futures):
+                    task = futures[future]
+                    try:
+                        result = future.result()
+                        results.append(TaskResult(task=task, success=True, output=result))
+                    except Exception as e:
+                        results.append(TaskResult(task=task, success=False, error=e))
+            except KeyboardInterrupt:
+                logger.warning("Exiting...")
+                exiting.set()
         return results
     
     def _execute_task(self, task: Task) -> Any:
@@ -251,11 +264,14 @@ class TaskManager:
             Exception: If task execution fails
         """
         logger.info(f"Executing task: {task}")
+        if self.settings.verbose:
+            logger.info(f"Command: {task.command} {task.arguments}")
+            logger.info(f"Admin: {task.admin}")
         
         # Create connection
         connection = ConnectionFactory.create_connection(task.host, self.settings)
-        logger.info(f"Connection: {connection}")
-        
+        if self.settings.verbose:
+            logger.info(f"Connection: {connection}")
         try:
             # Connect and execute based on task type
             with connection:
