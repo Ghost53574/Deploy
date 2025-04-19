@@ -146,8 +146,8 @@ def main():
                 "username": creds[0],
                 "password": creds[1],
                 "os": platform.system().lower(),
-                "address": "127.0.0.1",
-                "port": 5985
+                "address": "10.0.0.82",
+                "port": 5985,
             }
         )
     else:
@@ -222,7 +222,6 @@ def main():
         for hostname, host in hosts.items():
             if args.verbose:
                 logger.info(f"Host: {hostname}")
-                logger.warning("-----------------------------")
                 logger.info(f"Address: {host.address}")
                 logger.info(f"Port: {host.port}")
                 logger.info(f"OS: {host.os}")
@@ -234,7 +233,6 @@ def main():
         for script_name, script_data in scripts.items():
             if args.verbose:
                 logger.info(f"Script: {script_name}")
-                logger.warning("-----------------------------")
                 logger.info(f"Path: {script_data.path}")
                 logger.info(f"Extension: {script_data.extension}")
                 logger.info(f"Executor Type: {script_data.get_executor_type()}")

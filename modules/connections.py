@@ -6,9 +6,8 @@ Implements the factory pattern for different connection types.
 from abc import ABC, abstractmethod
 import logging
 import os
-from typing import Any, Optional, Dict
+from typing import Any, Dict
 import getpass
-import ssl
 
 from fabric2 import Connection, Config
 from pypsrp.wsman import WSMan
@@ -28,6 +27,7 @@ AUTH_BASIC = "basic"
 AUTH_CREDSSP = "credssp"
 AUTH_KERBEROS = "kerberos"
 AUTH_CERTIFICATE = "certificate"
+AUTH_NEGOTIATE = "negotiate"
 
 class DeployConnectionError(Exception):
     """Exception raised for connection errors."""
@@ -551,37 +551,77 @@ class WinRMConnection(BaseConnection):
             if self.host.address:
                 host = self.host.address
                 
-            # Set auth method based on host configuration
-            auth_method = self._get_auth_method()
-            
             # Authentication options
             kwargs = {
                 'server': host,
                 'port': int(self.host.port),
                 'username': self.host.username,
-                'ssl': self.host.ssl,
-                'cert_validation': self.host.server_cert_validation
+                'ssl': self.host.ssl if self.host.ssl else False,
+                'cert_validation': self.host.server_cert_validation if self.host.server_cert_validation else True,
+                'encryption': 'auto'
             }
             
-            # Add authentication parameters based on method
-            if auth_method == AUTH_BASIC or auth_method == AUTH_CREDSSP:
-                # Basic and CredSSP use password
-                kwargs['password'] = self.host.password
-                kwargs['auth'] = auth_method
-            elif auth_method == AUTH_KERBEROS:
-                # Kerberos doesn't need password
-                kwargs['auth'] = AUTH_KERBEROS
-            elif auth_method == AUTH_CERTIFICATE:
-                # Certificate auth uses cert files
-                kwargs['cert_pem'] = self.host.cert_pem
-                kwargs['cert_key_pem'] = self.host.cert_key_pem
-                kwargs['auth'] = AUTH_CERTIFICATE
-            
-            # Create WinRM connection
-            self.connection = WSMan(**kwargs)
+            # Try to connect with specified auth method first
+            auth_method = self._get_auth_method()
+            try:
+                self._attempt_connection(kwargs, auth_method)
+            except Exception as e:
+                # If CredSSP specifically fails, try basic auth as fallback
+                if auth_method == AUTH_CREDSSP and "CredSSP" in str(e):
+                    logger.warning(f"CredSSP authentication failed: {str(e)}. Trying basic auth as fallback.")
+                    self._attempt_connection(kwargs, AUTH_BASIC)
+                else:
+                    # Re-raise other exceptions
+                    raise
         except Exception as e:
             raise DeployConnectionError(f"Failed to connect to {self.host}: {str(e)}")
+    
+    def _attempt_connection(self, kwargs: Dict[str, Any], auth_method: str) -> None:
+        """
+        Attempt to create a WinRM connection with the specified authentication method.
+        
+        Args:
+            kwargs: Connection keyword arguments
+            auth_method: Authentication method to use
             
+        Raises:
+            Exception: If connection fails
+        """
+        conn_kwargs = kwargs.copy()
+        
+        # Add authentication parameters based on method
+        if auth_method == AUTH_BASIC:
+            # Basic auth - needs password and special encryption handling
+            conn_kwargs['password'] = self.host.password
+            conn_kwargs['auth'] = auth_method
+            
+            # For Basic auth, we need to set encryption to 'never' if SSL is not used
+            if not conn_kwargs.get('ssl', False):
+                conn_kwargs['encryption'] = 'never'
+                
+        elif auth_method == AUTH_CREDSSP:
+            # CredSSP uses password
+            conn_kwargs['password'] = self.host.password
+            conn_kwargs['auth'] = auth_method
+            
+        elif auth_method == AUTH_KERBEROS:
+            # Kerberos doesn't need password
+            conn_kwargs['auth'] = AUTH_KERBEROS
+            
+        elif auth_method == AUTH_CERTIFICATE:
+            # Certificate auth uses cert files
+            conn_kwargs['cert_pem'] = self.host.cert_pem
+            conn_kwargs['cert_key_pem'] = self.host.cert_key_pem
+            conn_kwargs['auth'] = AUTH_CERTIFICATE
+            
+        elif auth_method == AUTH_NEGOTIATE:
+            # Negotiate auth protocol (NTLM/Kerberos)
+            conn_kwargs['password'] = self.host.password
+            conn_kwargs['auth'] = AUTH_NEGOTIATE
+            
+        # Create WinRM connection
+        self.connection = WSMan(**conn_kwargs)
+        
     def _get_auth_method(self) -> str:
         """
         Determine the authentication method based on host configuration.
@@ -599,9 +639,11 @@ class WinRMConnection(BaseConnection):
             return AUTH_KERBEROS
         elif auth_protocol == "certificate":
             return AUTH_CERTIFICATE
+        elif auth_protocol == "negotiate":
+            return AUTH_NEGOTIATE
         else:
-            # Default to basic auth
-            return AUTH_BASIC
+            # Default to basic negotiate
+            return AUTH_NEGOTIATE
     
     def execute_command(
         self, 

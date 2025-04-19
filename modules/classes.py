@@ -93,8 +93,8 @@ class Host:
             raise ValidationError(f"Host {self.hostname}: device_type is required for network devices")
             
         # Windows authentication protocol validation
-        if self.os == "windows" and self.auth_protocol not in ["basic", "credssp", "kerberos", "certificate"]:
-            raise ValidationError(f"Host {self.hostname}: invalid auth_protocol '{self.auth_protocol}', must be 'basic', 'credssp', 'kerberos', or 'certificate'")
+        if self.os == "windows" and self.auth_protocol not in ["basic", "credssp", "kerberos", "certificate", "negotiate"]:
+            raise ValidationError(f"Host {self.hostname}: invalid auth_protocol '{self.auth_protocol}', must be 'basic', 'credssp', 'kerberos', 'negotiate', or 'certificate'")
             
         # Certificate validation for certificate auth
         if self.os == "windows" and self.auth_protocol == "certificate":

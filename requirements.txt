@@ -2,3 +2,4 @@ fabric2>=2.7.0
 paramiko>=2.7.2
 pypsrp>=0.5.0
 netmiko>=3.3.0
+requests_credssp

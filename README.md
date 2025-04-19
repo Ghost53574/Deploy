@@ -205,6 +205,7 @@ Deploy supports multiple authentication methods for Windows targets:
 - CredSSP (`credssp`) - For multi-hop scenarios
 - Kerberos (`kerberos`) - Domain authentication
 - Certificate (`certificate`) - Certificate-based authentication
+- Negotiate (`negotiate`) - NTLM/Kerberos negotiation
 
 Additional Windows parameters:
 - `auth_protocol`: Authentication protocol to use (optional, default: "basic")
