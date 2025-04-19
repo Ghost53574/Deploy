@@ -14,6 +14,7 @@ class Host:
     """
     Represents a target host in the deployment configuration.
     Contains connection information and authentication details.
+    Supports Linux, Windows, and network devices.
     """
     def __init__(self, hostname: str, config: Dict[str, Any]):
         """
@@ -35,12 +36,30 @@ class Host:
         self.ssh_keyfile = config.get("ssh_keyfile")
         self.ssh_key_pass = config.get("ssh_key_pass")
         
+        # Network device specific parameters
+        self.device_type = config.get("device_type")
+        self.enable_password = config.get("enable_password")
+        self.global_delay_factor = config.get("global_delay_factor", 1.0)
+        self.timeout = config.get("timeout", 100)
+        
+        # Windows authentication parameters
+        self.auth_protocol = config.get("auth_protocol", "basic")
+        self.cert_pem = config.get("cert_pem")
+        self.cert_key_pem = config.get("cert_key_pem")
+        self.ssl = config.get("ssl", False)
+        self.server_cert_validation = config.get("server_cert_validation", "ignore")
+        
         # Validate the host configuration
         self.validate()
         
         # Set default port if not provided
         if not self.port:
-            self.port = "22" if self.os == "linux" else "5985"
+            if self.os == "linux":
+                self.port = "22"
+            elif self.os == "windows":
+                self.port = "5985"
+            elif self.os == "network":
+                self.port = "22"  # Default for most network devices
     
     def validate(self) -> None:
         """
@@ -58,16 +77,35 @@ class Host:
             raise ValidationError(f"Host {self.hostname}: os is required")
         
         # Validate OS type
-        if self.os not in ["linux", "windows"]:
-            raise ValidationError(f"Host {self.hostname}: invalid os '{self.os}', must be 'linux' or 'windows'")
+        if self.os not in ["linux", "windows", "network"]:
+            raise ValidationError(f"Host {self.hostname}: invalid os '{self.os}', must be 'linux', 'windows', or 'network'")
         
         # Check authentication
-        if not self.password and not self.ssh_keyfile:
-            raise ValidationError(f"Host {self.hostname}: either password or ssh_keyfile is required")
+        if not self.password and not self.ssh_keyfile and not (self.cert_pem and self.cert_key_pem):
+            raise ValidationError(f"Host {self.hostname}: authentication credentials are required (password, ssh_keyfile, or certificates)")
         
         # Validate SSH key file if provided
         if self.ssh_keyfile and not os.path.exists(self.ssh_keyfile):
             raise ValidationError(f"Host {self.hostname}: ssh_keyfile '{self.ssh_keyfile}' does not exist")
+            
+        # Network device validation
+        if self.os == "network" and not self.device_type:
+            raise ValidationError(f"Host {self.hostname}: device_type is required for network devices")
+            
+        # Windows authentication protocol validation
+        if self.os == "windows" and self.auth_protocol not in ["basic", "credssp", "kerberos", "certificate"]:
+            raise ValidationError(f"Host {self.hostname}: invalid auth_protocol '{self.auth_protocol}', must be 'basic', 'credssp', 'kerberos', or 'certificate'")
+            
+        # Certificate validation for certificate auth
+        if self.os == "windows" and self.auth_protocol == "certificate":
+            if not self.cert_pem:
+                raise ValidationError(f"Host {self.hostname}: cert_pem is required for certificate authentication")
+            if not self.cert_key_pem:
+                raise ValidationError(f"Host {self.hostname}: cert_key_pem is required for certificate authentication")
+            if not os.path.exists(self.cert_pem):
+                raise ValidationError(f"Host {self.hostname}: cert_pem file '{self.cert_pem}' does not exist")
+            if not os.path.exists(self.cert_key_pem):
+                raise ValidationError(f"Host {self.hostname}: cert_key_pem file '{self.cert_key_pem}' does not exist")
     
     def __str__(self) -> str:
         """Return a string representation of the host."""
@@ -94,6 +132,23 @@ class Host:
         if self.ssh_keyfile:
             params["ssh_keyfile"] = self.ssh_keyfile
             params["ssh_key_pass"] = self.ssh_key_pass
+            
+        # Add network device parameters
+        if self.os == "network":
+            params["device_type"] = self.device_type
+            params["enable_password"] = self.enable_password
+            params["global_delay_factor"] = self.global_delay_factor
+            params["timeout"] = self.timeout
+            
+        # Add Windows authentication parameters
+        if self.os == "windows":
+            params["auth_protocol"] = self.auth_protocol
+            params["ssl"] = self.ssl
+            params["server_cert_validation"] = self.server_cert_validation
+            
+            if self.auth_protocol == "certificate":
+                params["cert_pem"] = self.cert_pem
+                params["cert_key_pem"] = self.cert_key_pem
             
         return params
 
@@ -221,8 +276,6 @@ class Settings:
             settings.append("verbose")
         if self.force_ssh:
             settings.append("force_ssh")
-        if self.local:
-            settings.append("local")
         if not settings:
             return "default settings"
         return ", ".join(settings)

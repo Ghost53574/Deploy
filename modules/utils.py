@@ -1,122 +1,10 @@
-import re
-import csv
 import json
-import classes
-import base64
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 from modules.classes import Host, Script, ValidationError
 
 logger = logging.getLogger(__name__)
-
-def str_to_bool(value):
-    if value.lower() in {'false', 'f', '0', 'no', 'n'}:
-        return False
-    elif value.lower() in {'true', 't', '1', 'yes', 'y'}:
-        return True
-    raise ValueError(f'{value} is not a valid boolean value')
-
-def parse_files(current_dir: Path,
-                accepted_exts: list
-                ) -> list:
-    files = []
-    for f in Path(current_dir).rglob("*"):
-        if f.is_file():
-            f_parts = f.name.split('.')
-            if len(f_parts) == 2:
-                f_ext = f_parts[1]
-                if f_ext is not None and f_ext in accepted_exts:
-                    files.append(f.name)
-    return files
-
-def load_scripts(file_list: list, 
-                 current_dir: Path
-                 ) -> dict:
-    scripts = {}
-    for f in file_list:
-        p = Path(str(current_dir.cwd()) + "/" + f)
-        script_name = str(p.name)[:]
-        script_dir  = str(p.parts[-2])
-        script_path = str(p)[:]
-        script_ext  = str(p.suffix)[:]
-        scripts[script_name] = classes.Script(script_name, script_path, script_dir, script_ext)
-    return scripts
-
-def increment_hostname(input_str, hostname_list):
-    def replace_hostname(match):
-        prefix = match.group(2)
-        num = int(match.group(3))
-        new_hostname = f'{prefix}{num}'
-        
-        while new_hostname in hostname_list:
-            num += 1
-            new_hostname = f'{prefix}{num}'
-        
-        hostname_list.append(new_hostname)
-        return new_hostname
-
-    pattern = r'(([a-zA-Z-]*?)(\d+))'
-    return re.sub(pattern, replace_hostname, input_str, flags=re.MULTILINE)
-
-def parse_json_structure(data_str):
-    lines = data_str.strip().split("\n")
-    data = {}
-    current_item = None
-    hostname_list = []
-    parent_key = ""
-
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-
-        if ":" not in line:
-            continue
-
-        key, value = line.split(":", 1)
-        key = key.strip().split('"')[1]
-        value = value.strip()
-
-        if value == "{":
-            if key != parent_key:
-                if key not in hostname_list:
-                    hostname_list.append(key)
-                    parent_key = key
-                else:
-                    parent_key = increment_hostname(key, hostname_list)
-            current_item = {
-                "address": None,
-                "os": None,
-                "username": None,
-                "password": None,
-                "port": None,
-            }
-            data[parent_key] = current_item
-        elif key == "address":
-            data[parent_key]["address"] = value.split('"')[1]
-        elif key == "os":
-            data[parent_key]["os"] = value.split('"')[1]
-        elif key == "username":
-            data[parent_key]["username"] = value.split('"')[1]
-        elif key == "password":
-            data[parent_key]["password"] = value.split('"')[1]
-        elif key == "port":
-            port = value.split('"')[1]
-            if port == "None" or port is None:
-                data[parent_key]["port"] = "22"
-            else:
-                data[parent_key]["port"] = port
-        hostname_list.sort()
-    return data
-
-def csv_to_json(csv_file_path):
-    data = []
-    with open(csv_file_path, 'r') as csvfile:
-        csv_reader = csv.DictReader(csvfile)
-        for row in csv_reader:
-            data.append(row)
-    return json.dumps(data, indent=4)
     
 class Field:
     """Enumeration of CSV fields."""
@@ -267,19 +155,6 @@ def script_inline_replace(pattern: str, replacement: str, content: str) -> str:
     """Replace patterns in script content."""
     return content.replace(pattern, replacement)
 
-def text_to_base64(text: str) -> str:
-    """Convert text to base64."""
-    return base64.b64encode(text.encode()).decode()
-
-def xor_encrypt(key: str, data: str) -> str:
-    """XOR encrypt data with key."""
-    encrypted = []
-    for i in range(len(data)):
-        key_char = key[i % len(key)]
-        encrypted_char = ord(data[i]) ^ ord(key_char)
-        encrypted.append(format(encrypted_char, '02x'))
-    return ''.join(encrypted)
-
 def create_script_from_template(template_path: str, replacements: Dict[str, str]) -> str:
     """Create a script from a template with replacements."""
     with open(template_path, 'r') as f:
@@ -351,6 +226,19 @@ def create_hosts_from_csv(records: List[Dict[str, str]], accepted_os: Optional[L
         except ValidationError as e:
             logger.error(f"Invalid host configuration for {hostname}: {e}")
     return hosts
+
+def parse_files(current_dir: Path,
+                accepted_exts: list
+                ) -> list:
+    files = []
+    for f in Path(current_dir).rglob("*"):
+        if f.is_file():
+            f_parts = f.name.split('.')
+            if len(f_parts) == 2:
+                f_ext = f_parts[1]
+                if f_ext is not None and f_ext in accepted_exts:
+                    files.append(f.name)
+    return files
 
 def find_scripts(current_dir: Path, accepted_exts: List[str]) -> Dict[str, Script]:
     """Find and create Script objects from files in the current directory."""

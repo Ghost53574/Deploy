@@ -26,5 +26,54 @@
         "os": "windows",
         "address": "192.168.2.35",
         "port": "5985"
+    },
+    "winserver2": {
+        "username": "DEEZ\\Administrator",
+        "password": "Password!@",
+        "os": "windows",
+        "address": "192.168.2.36",
+        "port": "5985",
+        "auth_protocol": "credssp",
+        "ssl": true,
+        "server_cert_validation": "ignore"
+    },
+    "winserver3": {
+        "username": "DEEZ\\Administrator",
+        "os": "windows",
+        "address": "192.168.2.37",
+        "port": "5986",
+        "auth_protocol": "certificate",
+        "cert_pem": "path/to/cert.pem",
+        "cert_key_pem": "path/to/key.pem",
+        "ssl": true,
+        "server_cert_validation": "validate"
+    },
+    "cisco-switch1": {
+        "username": "admin",
+        "password": "cisco123",
+        "os": "network",
+        "address": "192.168.3.10",
+        "port": "22",
+        "device_type": "cisco_ios",
+        "enable_password": "enable_pass"
+    },
+    "juniper-router1": {
+        "username": "admin",
+        "password": "juniper123",
+        "os": "network",
+        "address": "192.168.3.20",
+        "port": "22",
+        "device_type": "juniper_junos",
+        "global_delay_factor": 2.0,
+        "timeout": 120
+    },
+    "arista-switch1": {
+        "username": "admin",
+        "password": "arista123",
+        "os": "network",
+        "address": "192.168.3.30",
+        "port": "22",
+        "device_type": "arista_eos",
+        "ssh_keyfile": "path/to/private_key"
     }
 }

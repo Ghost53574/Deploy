@@ -6,18 +6,28 @@ Implements the factory pattern for different connection types.
 from abc import ABC, abstractmethod
 import logging
 import os
-from typing import Any
+from typing import Any, Optional, Dict
 import getpass
+import ssl
 
 from fabric2 import Connection, Config
 from pypsrp.wsman import WSMan
 from pypsrp.powershell import PowerShell, RunspacePool
+from netmiko import ConnectHandler
+from netmiko.exceptions import NetMikoTimeoutException, NetMikoAuthenticationException
 
 import modules.utils as utils
 from modules.classes import Host, Settings
 
 # Configure logger
 logger = logging.getLogger(__name__)
+
+# Define authentication constants for WinRM
+# These would typically come from pypsrp.auth but we'll define them here for compatibility
+AUTH_BASIC = "basic"
+AUTH_CREDSSP = "credssp"
+AUTH_KERBEROS = "kerberos"
+AUTH_CERTIFICATE = "certificate"
 
 class DeployConnectionError(Exception):
     """Exception raised for connection errors."""
@@ -374,10 +384,160 @@ class SSHConnection(BaseConnection):
             self.connection.close()
             self.connection = None
 
+class NetmikoConnection(BaseConnection):
+    """
+    Connection for network devices using Netmiko.
+    Supports various network device types (Cisco, Juniper, etc.).
+    """
+    def _create_connection(self) -> None:
+        """
+        Create a Netmiko connection to the network device.
+            
+        Raises:
+            DeployConnectionError: If connection fails
+        """
+        try:
+            # Prepare device parameters
+            device_params = {
+                'device_type': self.host.device_type,
+                'ip': self.host.address,
+                'username': self.host.username,
+                'password': self.host.password,
+                'port': int(self.host.port),
+                'global_delay_factor': float(self.host.global_delay_factor),
+                'timeout': int(self.host.timeout),
+            }
+            
+            # Add enable password if provided
+            if self.host.enable_password:
+                device_params['secret'] = self.host.enable_password
+                
+            # Use SSH key if provided
+            if self.host.ssh_keyfile:
+                device_params['use_keys'] = True
+                device_params['key_file'] = self.host.ssh_keyfile
+                if self.host.ssh_key_pass:
+                    device_params['passphrase'] = self.host.ssh_key_pass
+            
+            # Create connection
+            self.connection = ConnectHandler(**device_params)
+            
+            # Enter enable mode if an enable password is provided
+            if self.host.enable_password:
+                self.connection.enable()
+                
+        except NetMikoTimeoutException:
+            raise DeployConnectionError(f"Connection timeout to {self.host.address}")
+        except NetMikoAuthenticationException:
+            raise DeployConnectionError(f"Authentication failed for {self.host.username}@{self.host.address}")
+        except Exception as e:
+            raise DeployConnectionError(f"Failed to connect to {self.host}: {str(e)}")
+    
+    def execute_command(
+        self, 
+        command: str, 
+        arguments: str = "", 
+        admin: bool = False
+        ) -> Any:
+        """
+        Execute a command on the network device.
+        
+        Args:
+            command: The command to execute
+            arguments: Optional arguments to the command
+            admin: Whether to execute with admin privileges (uses enable mode)
+            
+        Returns:
+            Command execution results
+            
+        Raises:
+            DeployConnectionError: If execution fails
+        """
+        if not self._connected:
+            self.connect()
+            
+        if not self.connection:
+            raise DeployConnectionError("No active connection")
+            
+        try:
+            # Build full command
+            cmd = f"{command} {arguments}" if arguments else command
+            
+            # Execute command
+            if admin and self.host.enable_password and not self.connection.check_enable_mode():
+                self.connection.enable()
+                
+            # Send command and get output
+            output = self.connection.send_command(cmd)
+            return output
+        except Exception as e:
+            raise DeployConnectionError(f"Failed to execute command '{command}' on {self.host}: {str(e)}")
+    
+    def execute_script(
+        self, 
+        script_path: str, 
+        script_name: str, 
+        script_type: str, 
+        arguments: str = "",
+        admin: bool = False
+        ) -> Any:
+        """
+        Execute a script on the network device.
+        For network devices, this typically means sending a series of commands.
+        
+        Args:
+            script_path: Path to the script file
+            script_name: Name of the script
+            script_type: Type of script
+            arguments: Optional arguments to the script
+            admin: Whether to execute with admin privileges
+            
+        Returns:
+            Script execution results
+            
+        Raises:
+            DeployConnectionError: If execution fails
+        """
+        if not self._connected:
+            self.connect()
+            
+        if not self.connection:
+            raise DeployConnectionError("No active connection")
+            
+        try:
+            # Read the script file as a list of commands
+            with open(script_path, 'r') as f:
+                commands = [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
+            
+            # Enter enable mode if admin requested and not already in enable mode
+            if admin and self.host.enable_password and not self.connection.check_enable_mode():
+                self.connection.enable()
+            
+            # Execute each command in the script
+            results = []
+            for cmd in commands:
+                # Parse arguments if any
+                if arguments and '{args}' in cmd:
+                    cmd = cmd.replace('{args}', arguments)
+                    
+                output = self.connection.send_command(cmd)
+                results.append(output)
+            
+            # Return concatenated results
+            return '\n'.join(results)
+        except Exception as e:
+            raise DeployConnectionError(f"Failed to execute script '{script_name}' on {self.host}: {str(e)}")
+    
+    def close(self) -> None:
+        """Close the Netmiko connection."""
+        if self.connection:
+            self.connection.disconnect()
+            self.connection = None
+
 class WinRMConnection(BaseConnection):
     """
     WinRM connection using pypsrp.
-    Supports password authentication.
+    Supports multiple authentication methods: Basic, CredSSP, Kerberos, and Certificate.
     """
     def _create_connection(self) -> None:
         """
@@ -390,17 +550,58 @@ class WinRMConnection(BaseConnection):
             host = ""
             if self.host.address:
                 host = self.host.address
+                
+            # Set auth method based on host configuration
+            auth_method = self._get_auth_method()
+            
+            # Authentication options
+            kwargs = {
+                'server': host,
+                'port': int(self.host.port),
+                'username': self.host.username,
+                'ssl': self.host.ssl,
+                'cert_validation': self.host.server_cert_validation
+            }
+            
+            # Add authentication parameters based on method
+            if auth_method == AUTH_BASIC or auth_method == AUTH_CREDSSP:
+                # Basic and CredSSP use password
+                kwargs['password'] = self.host.password
+                kwargs['auth'] = auth_method
+            elif auth_method == AUTH_KERBEROS:
+                # Kerberos doesn't need password
+                kwargs['auth'] = AUTH_KERBEROS
+            elif auth_method == AUTH_CERTIFICATE:
+                # Certificate auth uses cert files
+                kwargs['cert_pem'] = self.host.cert_pem
+                kwargs['cert_key_pem'] = self.host.cert_key_pem
+                kwargs['auth'] = AUTH_CERTIFICATE
+            
             # Create WinRM connection
-            self.connection = WSMan(
-                server=host,
-                port=int(self.host.port),
-                username=self.host.username,
-                password=self.host.password,
-                ssl=False,  # Note: Consider making this configurable
-                cert_validation=False  # Note: Consider making this configurable
-            )
+            self.connection = WSMan(**kwargs)
         except Exception as e:
             raise DeployConnectionError(f"Failed to connect to {self.host}: {str(e)}")
+            
+    def _get_auth_method(self) -> str:
+        """
+        Determine the authentication method based on host configuration.
+        
+        Returns:
+            Authentication method constant
+        """
+        auth_protocol = self.host.auth_protocol.lower()
+        
+        if auth_protocol == "basic":
+            return AUTH_BASIC
+        elif auth_protocol == "credssp":
+            return AUTH_CREDSSP
+        elif auth_protocol == "kerberos":
+            return AUTH_KERBEROS
+        elif auth_protocol == "certificate":
+            return AUTH_CERTIFICATE
+        else:
+            # Default to basic auth
+            return AUTH_BASIC
     
     def execute_command(
         self, 
@@ -440,8 +641,8 @@ class WinRMConnection(BaseConnection):
                 
                 # Execute with admin if requested
                 if admin:
-                    # Note: In PowerShell, you'd typically use "Start-Process" with "-Verb RunAs"
-                    # This is simplified and may need adjustment
+                    # For PowerShell, we'd typically use "Start-Process" with "-Verb RunAs"
+                    # This is simplified and may need adjustment based on your specific requirements
                     pass
                 
                 # Invoke and return results
@@ -542,5 +743,7 @@ class ConnectionFactory:
             return SSHConnection(host, settings)
         elif host.os == "windows":
             return WinRMConnection(host, settings)
+        elif host.os == "network":
+            return NetmikoConnection(host, settings)
         else:
             raise ValueError(f"Unsupported OS: {host.os}")

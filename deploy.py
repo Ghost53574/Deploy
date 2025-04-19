@@ -13,19 +13,6 @@ from modules.classes import Settings, Host
 from modules.task_manager import TaskManager
 import modules.utils as utils
 
-try:
-    from faker import Factory
-    Faker = Factory.create
-    fake = Faker()
-except ImportError:
-    print("Faker library not found. Installing...")
-    import subprocess
-    subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'faker', '--break-system-packages'], 
-                         stdout=subprocess.DEVNULL)
-    from faker import Factory
-    Faker = Factory.create
-    fake = Faker()
-
 # Banner
 BANNER = f'''
             \x1b[1;31m██████╗ ███████╗██████╗ ██╗      ██████╗ ██╗   ██╗\x1b[0m
