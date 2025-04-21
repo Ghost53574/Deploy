@@ -152,12 +152,17 @@ class SSHConnection(BaseConnection):
     """
     def _create_connection(self) -> None:
         """
-        Create an SSH connection to the host.
+        Create an SSH connection to the host with timeout support.
             
         Raises:
-            DeployConnectionError: If connection fails
+            DeployConnectionError: If connection fails or times out
         """
         try:
+            # Apply connection timeout from settings
+            connect_timeout = self.settings.connection_timeout
+            if connect_timeout and connect_timeout > 0:
+                logger.debug(f"Using connection timeout of {connect_timeout} seconds")
+                
             # Determine authentication method
             if self.host.ssh_keyfile:
                 self.connection = self._connect_with_key()
@@ -391,12 +396,17 @@ class NetmikoConnection(BaseConnection):
     """
     def _create_connection(self) -> None:
         """
-        Create a Netmiko connection to the network device.
+        Create a Netmiko connection to the network device with timeout support.
             
         Raises:
-            DeployConnectionError: If connection fails
+            DeployConnectionError: If connection fails or times out
         """
         try:
+            # Use connection timeout from settings or host-specific timeout
+            timeout = self.settings.connection_timeout or int(self.host.timeout)
+            if self.settings.verbose:
+                logger.debug(f"Using connection timeout of {timeout} seconds for network device")
+            
             # Prepare device parameters
             device_params = {
                 'device_type': self.host.device_type,
@@ -405,7 +415,7 @@ class NetmikoConnection(BaseConnection):
                 'password': self.host.password,
                 'port': int(self.host.port),
                 'global_delay_factor': float(self.host.global_delay_factor),
-                'timeout': int(self.host.timeout),
+                'timeout': timeout,
             }
             
             # Add enable password if provided
@@ -425,7 +435,7 @@ class NetmikoConnection(BaseConnection):
             # Enter enable mode if an enable password is provided
             if self.host.enable_password:
                 self.connection.enable()
-                
+            
         except NetMikoTimeoutException:
             raise DeployConnectionError(f"Connection timeout to {self.host.address}")
         except NetMikoAuthenticationException:

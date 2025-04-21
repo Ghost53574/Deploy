@@ -6,6 +6,9 @@ Implements the producer/consumer pattern for task distribution and execution.
 import concurrent.futures
 import logging
 import queue
+import threading
+import signal
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -25,6 +28,7 @@ class Task:
     command: Optional[str] = None
     arguments: Optional[str] = None
     admin: bool = False
+    timeout: Optional[int] = None
     
     def validate(self) -> None:
         """
@@ -215,7 +219,7 @@ class TaskManager:
     
     def execute_tasks(self) -> List[TaskResult]:
         """
-        Execute all tasks in the queue using a thread pool.
+        Execute all tasks in the queue using a thread pool with timeout support.
         
         Returns:
             List of task results
@@ -223,31 +227,154 @@ class TaskManager:
         results = []
         import threading
         import signal
+        import time
+        
+        # Set up exit event for signal handling
         exiting = threading.Event()
         def sig_handler(signum, frame):
+            logger.warning(f"Received signal {signum}, initiating graceful shutdown")
             exiting.set()
+        
+        # Register signal handlers
         signal.signal(signal.SIGTERM, sig_handler)
+        signal.signal(signal.SIGINT, sig_handler)
+        
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.settings.max_workers) as executor:
             futures = {}
             try:
                 # Submit all tasks to the executor
                 while not self.task_queue.empty():
                     task = self.task_queue.get()
-                    future = executor.submit(self._execute_task, task)
+                    # Apply task-specific timeout or default from settings
+                    timeout = task.timeout or self.settings.task_timeout
+                    if self.settings.verbose:
+                        logger.info(f"Task timeout: {timeout} seconds")
+                    
+                    # Submit the task with timeout info
+                    future = executor.submit(self._execute_task_with_timeout, task, timeout, exiting)
                     futures[future] = task
                 
-                # Collect results as they complete
-                for future in concurrent.futures.as_completed(futures):
-                    task = futures[future]
-                    try:
-                        result = future.result()
-                        results.append(TaskResult(task=task, success=True, output=result))
-                    except Exception as e:
-                        results.append(TaskResult(task=task, success=False, error=e))
+                # Wait for completion with overall executor timeout
+                start_time = time.time()
+                remaining_futures = set(futures.keys())
+                
+                while remaining_futures and not exiting.is_set():
+                    # Use wait with a short timeout to allow for checking signals
+                    timeout_increment = 1.0  # Check for signals every second
+                    done, remaining_futures = concurrent.futures.wait(
+                        remaining_futures, 
+                        timeout=timeout_increment,
+                        return_when=concurrent.futures.FIRST_COMPLETED
+                    )
+                    
+                    # Process completed futures
+                    for future in done:
+                        task = futures[future]
+                        try:
+                            result = future.result()
+                            results.append(TaskResult(task=task, success=True, output=result))
+                        except concurrent.futures.TimeoutError:
+                            logger.error(f"Task timed out: {task}")
+                            results.append(TaskResult(
+                                task=task, 
+                                success=False, 
+                                error=TimeoutError(f"Task execution exceeded timeout of {task.timeout or self.settings.task_timeout} seconds")
+                            ))
+                        except Exception as e:
+                            logger.error(f"Task failed: {task} - {str(e)}")
+                            results.append(TaskResult(task=task, success=False, error=e))
+                    
+                    # Check overall executor timeout
+                    elapsed = time.time() - start_time
+                    if elapsed > self.settings.executor_timeout:
+                        logger.warning(f"Executor timeout reached ({self.settings.executor_timeout} seconds)")
+                        break
+                
+                # Cancel any remaining tasks
+                for future in remaining_futures:
+                    if not future.done():
+                        future.cancel()
+                        task = futures[future]
+                        results.append(TaskResult(
+                            task=task,
+                            success=False,
+                            error=concurrent.futures.CancelledError("Task cancelled due to timeout or interrupt")
+                        ))
+                        logger.warning(f"Cancelled task: {task}")
+                
             except KeyboardInterrupt:
-                logger.warning("Exiting...")
+                logger.warning("Keyboard interrupt detected, initiating graceful shutdown")
                 exiting.set()
+                
+                # Cancel pending futures
+                for future in futures:
+                    if not future.done():
+                        future.cancel()
+        
         return results
+        
+    def _execute_task_with_timeout(self, task: Task, timeout: int, exit_event: threading.Event) -> Any:
+        """
+        Execute a task with timeout support and exit event checking.
+        This method uses a worker thread approach to allow for timeout enforcement even when
+        the underlying task might be blocked on network operations that don't respect timeouts.
+        
+        Args:
+            task: The task to execute
+            timeout: Timeout in seconds for this specific task
+            exit_event: Event to check for program-wide exit signal
+            
+        Returns:
+            Task output from the executed task
+            
+        Raises:
+            concurrent.futures.TimeoutError: If the task execution exceeds the timeout
+            concurrent.futures.CancelledError: If the task was cancelled due to exit request
+            Exception: If task execution fails with any other error
+        """
+        import threading
+        import time
+        import concurrent.futures
+        
+        result = None
+        exception = None
+        execution_completed = threading.Event()
+        
+        # Define the worker thread function
+        def worker():
+            nonlocal result, exception
+            try:
+                result = self._execute_task(task)
+                execution_completed.set()
+            except Exception as e:
+                exception = e
+                execution_completed.set()
+        
+        # Start the worker thread
+        thread = threading.Thread(target=worker)
+        thread.daemon = True
+        thread.start()
+        
+        # Wait for completion or timeout
+        start_time = time.time()
+        while not execution_completed.is_set() and not exit_event.is_set():
+            # Wait with a short timeout to allow checking exit_event
+            execution_completed.wait(0.1)
+            
+            # Check if we've exceeded the timeout
+            if time.time() - start_time > timeout:
+                logger.warning(f"Task timeout reached for {task} ({timeout} seconds)")
+                raise concurrent.futures.TimeoutError(f"Task execution exceeded timeout of {timeout} seconds")
+        
+        # Check if we were asked to exit
+        if exit_event.is_set() and not execution_completed.is_set():
+            raise concurrent.futures.CancelledError("Task cancelled due to exit request")
+        
+        # Re-raise any exception from the worker thread
+        if exception:
+            raise exception
+            
+        return result
     
     def _execute_task(self, task: Task) -> Any:
         """

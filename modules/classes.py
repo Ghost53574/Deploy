@@ -228,7 +228,10 @@ class Settings:
                  quiet: bool = False, 
                  force_ssh: bool = False,
                  verbose: bool = False,
-                 max_workers: int = 25):
+                 max_workers: int = 25,
+                 connection_timeout: int = 30,
+                 task_timeout: int = 300,
+                 executor_timeout: int = 1800):
         """
         Initialize settings with optional parameters.
         
@@ -243,6 +246,9 @@ class Settings:
             force_ssh: Whether to force SSH for all connections
             local: Whether to execute locally
             max_workers: Maximum number of concurrent workers
+            connection_timeout: Timeout in seconds for establishing connections (default: 30)
+            task_timeout: Timeout in seconds for executing individual tasks (default: 300)
+            executor_timeout: Timeout in seconds for the entire execution (default: 1800)
         """
         self.admin = admin
         self.single_host = single_host
@@ -254,6 +260,9 @@ class Settings:
         self.force_ssh = force_ssh
         self.verbose = verbose
         self.max_workers = max_workers
+        self.connection_timeout = connection_timeout
+        self.task_timeout = task_timeout
+        self.executor_timeout = executor_timeout
     
     def __str__(self) -> str:
         """Return a string representation of the settings."""

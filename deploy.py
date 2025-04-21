@@ -110,6 +110,15 @@ def main():
     parser.add_argument('-s', '--ssh', action='store_true', help='Force SSH for Windows hosts')
     parser.add_argument('-w', '--workers', type=int, default=25, help='Number of concurrent workers')
     
+    # Timeout options
+    timeout_group = parser.add_argument_group('Timeout Options')
+    timeout_group.add_argument('--connection-timeout', type=int, default=30, 
+                              help='Timeout in seconds for establishing connections (default: 30)')
+    timeout_group.add_argument('--task-timeout', type=int, default=300, 
+                              help='Timeout in seconds for executing individual tasks (default: 300)')
+    timeout_group.add_argument('--executor-timeout', type=int, default=1800, 
+                              help='Timeout in seconds for the entire execution (default: 1800)')
+    
     # Task options
     task_group = parser.add_mutually_exclusive_group()
     task_group.add_argument('-k', '--command', type=str, help='Execute a command on hosts')
@@ -252,7 +261,10 @@ def main():
         quiet=args.quiet,
         force_ssh=args.ssh,
         verbose=args.verbose,
-        max_workers=args.workers
+        max_workers=args.workers,
+        connection_timeout=args.connection_timeout,
+        task_timeout=args.task_timeout,
+        executor_timeout=args.executor_timeout
     )
     
     # Create task manager
