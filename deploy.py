@@ -7,7 +7,7 @@ import sys
 sys.dont_write_bytecode = True
 import argparse
 from pathlib import Path
-from modules as utils
+from modules import utils
 from logging import logging, config
 from modules.classes import Settings, Host
 from modules.task_manager import TaskManager
