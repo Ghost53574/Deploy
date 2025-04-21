@@ -1,40 +1,61 @@
 #!/usr/bin/env python3
-import logging.config
+"""
+This is Deploy, a ghetto version of ansible that takes a bunch of scripts and
+executes them on as many hosts as possible in a multi-threaded way.
+"""
 import sys
-import logging
+sys.dont_write_bytecode = True
 import argparse
 from pathlib import Path
-
-# Make sure not to create __pycache__ files
-sys.dont_write_bytecode = True
-
-# Custom modules from Deploy
+from modules as utils
+from logging import logging, config
 from modules.classes import Settings, Host
 from modules.task_manager import TaskManager
-import modules.utils as utils
 
-# Banner
-BANNER = f'''
-            \x1b[1;31m██████╗ ███████╗██████╗ ██╗      ██████╗ ██╗   ██╗\x1b[0m
-            \x1b[1;31m██╔══██╗██╔════╝██╔══██╗██║     ██╔═══██╗╚██╗ ██╔╝\x1b[0m
-            \x1b[1;31m██║  ██║█████╗  ██████╔╝██║     ██║   ██║ ╚████╔╝ \x1b[0m
-            \x1b[1;31m██║  ██║██╔══╝  ██╔═══╝ ██║     ██║   ██║  ╚██╔╝  \x1b[0m
-            \x1b[1;31m██████╔╝███████╗██║     ███████╗╚██████╔╝   ██║   \x1b[0m
-            \x1b[1;31m╚═════╝ ╚══════╝╚═╝     ╚══════╝ ╚═════╝    ╚═╝   \x1b[0m
+BANNER = '''
+            \033[1;31m██████╗ ███████╗██████╗ ██╗      ██████╗ ██╗   ██╗\033[0m
+            \033[1;31m██╔══██╗██╔════╝██╔══██╗██║     ██╔═══██╗╚██╗ ██╔╝\033[0m
+            \033[1;31m██║  ██║█████╗  ██████╔╝██║     ██║   ██║ ╚████╔╝ \033[0m
+            \033[1;31m██║  ██║██╔══╝  ██╔═══╝ ██║     ██║   ██║  ╚██╔╝  \033[0m
+            \033[1;31m██████╔╝███████╗██║     ███████╗╚██████╔╝   ██║   \033[0m
+            \033[1;31m╚═════╝ ╚══════╝╚═╝     ╚══════╝ ╚═════╝    ╚═╝   \033[0m
 
-\x1b[1;35m                                               by ⧸𝒸o𝓏⧸\x1b[0m
+\033[1;35m                                               by ⧸𝒸o𝓏⧸\033[0m
 '''
 class DispatchingFormatter(logging.Formatter):
+"""
+DispatchingFormatter class allows for the creation of
+different formatters to be created and then called upon
+with the __name__ of the module or a specified name
+"""
     def __init__(self, formatters, default_formatter):
+        """
+        __init__(
+        self,
+        formatters: Dict[str, logging.Formatter],
+        default_formatter: logging.Formatter
+        ):
+        """
         self._formatters = formatters
         self._default_formatter = default_formatter
 
     def format(self, record):
+        """
+        format(
+        self,
+        record: str
+        ):
+
+        record is the name of the formatter to retrieve
+        """
         formatter = self._formatters.get(record.name, self._default_formatter)
         return formatter.format(record)
 
 class CustomGeneralLogFormatter(logging.Formatter):
-    """Custom formatter with colored output."""
+    """
+    Custom formatter with colored output. The formatter
+    is used for all normal logging messages.
+    """
     green = '\033[92m'
     grey = '\033[92m'
     yellow = '\033[93m'
@@ -54,7 +75,11 @@ class CustomGeneralLogFormatter(logging.Formatter):
         return logging.Formatter(self.FORMATS.get(record.levelno)).format(record)
 
 class CustomMessageFormatter(logging.Formatter):
-    """Custom formatter with colored output."""
+    """
+    Custom formatter with colored output. The formatter
+    is used for all print styled messages that isn't 
+    normal logging.
+    """
     bg_green = '\033[102m'
     bg_yellow = '\033[43m'
     green = '\033[92m'
