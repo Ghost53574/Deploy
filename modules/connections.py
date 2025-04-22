@@ -186,16 +186,18 @@ class SSHConnection(BaseConnection):
                     'password': self.host.password
                 },
                 'connect_kwargs': {
-                    'password': self.host.password
-                }
+                    'password': self.host.password,
+                    'banner_timeout': 60
+                },
             }
         ) if self.settings.admin else Config(
             overrides={
                 'user': self.host.username,
                 'password': self.host.password,
                 'connect_kwargs': {
-                    'password': self.host.password
-                }
+                    'password': self.host.password,
+                    'banner_timeout': 60
+                },
             }
         )
         
@@ -242,8 +244,9 @@ class SSHConnection(BaseConnection):
                 'connect_kwargs': {
                     'key_filename': self.host.ssh_keyfile,
                     'passphrase': passphrase,
-                    'look_for_keys': False
-                }
+                    'look_for_keys': False,
+                    'banner_timeout': 60
+                },
             }
         ) if self.settings.admin else Config(
             overrides={
@@ -251,8 +254,9 @@ class SSHConnection(BaseConnection):
                 'connect_kwargs': {
                     'key_filename': self.host.ssh_keyfile,
                     'passphrase': passphrase,
-                    'look_for_keys': False
-                }
+                    'look_for_keys': False,
+                    'banner_timeout': 60
+                },
             }
         )
         
@@ -789,7 +793,7 @@ class ConnectionFactory:
             
         Raises:
             ValueError: If the host OS is not supported
-        """        
+        """
         # Create connection based on OS
         if host.os == "linux" or settings.force_ssh:
             return SSHConnection(host, settings)

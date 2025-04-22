@@ -213,9 +213,7 @@ def main():
         else:
             logger.error(f"Host {args.host} not found")
             return 1
-    
-    logger.info(f"Loaded {len(hosts)} hosts")
-    
+        
     # Find scripts in scripts directory
     scripts_dir = Path(args.scripts)
     if not scripts_dir.exists():
@@ -224,31 +222,36 @@ def main():
     
     exts = ["py3", "py", "sh", "bat", "ps1", "pl"]
     scripts = utils.find_scripts(scripts_dir, exts)
-
+    
+    if args.task:
+        if args.task in scripts:
+            scripts = {args.task: scripts[args.task]}
+        else:
+            logger.error(f"Script {args.task} not found")
+            return 1
+    
     if args.list:
-        logger.warning("Listing available hosts and scripts:")
-        logger.warning("-----------------------------")
         for hostname, host in hosts.items():
             if args.verbose:
-                logger.info(f"Host: {hostname}")
+                logger.error(f"Host: {hostname}")
                 logger.info(f"Address: {host.address}")
                 logger.info(f"Port: {host.port}")
                 logger.info(f"OS: {host.os}")
                 logger.info(f"Username: {host.username}")
                 logger.info(f"Password: {host.password}")
             else:
-                logger.info(f"Host: {hostname}@{host.address}")
-            logger.warning("-----------------------------")
+                logger.error(f"Host: {hostname}@{host.address}")
         for script_name, script_data in scripts.items():
             if args.verbose:
-                logger.info(f"Script: {script_name}")
+                logger.error(f"Script: {script_name}")
                 logger.info(f"Path: {script_data.path}")
                 logger.info(f"Extension: {script_data.extension}")
                 logger.info(f"Executor Type: {script_data.get_executor_type()}")
             else:
-                logger.info(f"Script: {script_name}")
-            logger.warning("-----------------------------")
+                logger.error(f"Script: {script_name}")
         return 0
+    
+    logger.info(f"Loaded {len(hosts)} hosts")
     
     # Create settings object
     settings = Settings(
