@@ -1,0 +1,12 @@
+{
+  "_comment": "Deploy Configuration Template - Copy this file to config.json and customize as needed",
+  "defaults": {
+    "_comment": "Default execution settings",
+    "max_workers": 25,
+    "connection_timeout": 30,
+    "task_timeout": 300,
+    "executor_timeout": 1800,
+    "script_extensions": ["py3", "py", "sh", "bat", "ps1", "pl"],
+    "default_os_filter": ["linux", "windows"]
+  }
+}
