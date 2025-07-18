@@ -20,4 +20,11 @@ jobs:
         pip install pylint fabric2>=2.7.0 paramiko>=2.7.2 pypsrp>=0.5.0 netmiko>=3.3.0 requests_credssp
     - name: Analysing the code with pylint
       run: |
-        pylint --disable=C0303 --disable=C0326 --disable=C0301 --disable=W1203 --disable=C0304 --disable=W0718 --disable=W0621 --disable=C0415 --disable=W0105 --disable=R0902 --disable=R0912 --disable=R1705 --disable=R0913 --disable=R0917 --disable=R0903 --disable=W0107 --disable=R0914 --disable=C0116 --disable=R1702  $(git ls-files '*.py')
+        pylint --fail-under 5 --fail-on E \
+        --disable=C0303 --disable=C0326 --disable=C0301 \
+        --disable=W1203 --disable=C0304 --disable=W0718 \
+        --disable=W0621 --disable=C0415 --disable=W0105 \
+        --disable=R0902 --disable=R0912 --disable=R1705 \
+        --disable=R0913 --disable=R0917 --disable=R0903 \
+        --disable=W0107 --disable=R0914 --disable=C0116 \
+        --disable=R1702  $(git ls-files '*.py') 
