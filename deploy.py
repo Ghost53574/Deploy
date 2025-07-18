@@ -9,18 +9,19 @@ configuration options.
 Author: /coz/
 Version: 2.0.0
 """
-import sys
-sys.dont_write_bytecode = True
-
 import argparse
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Dict, Any, Optional
+
 from modules import utils
 from modules.classes import Settings, Host
 from modules.task_manager import TaskManager
+
+sys.dont_write_bytecode = True
 
 __version__ = "2.0.0"
 __author__ = "/coz/"
@@ -57,7 +58,7 @@ def load_config_file(config_path: Optional[str] = None) -> Dict[str, Any]:
     Returns:
         Configuration dictionary
     """
-    config = DEFAULT_CONFIG.copy()
+    file_config = DEFAULT_CONFIG.copy()
     
     # Look for config file in common locations
     possible_paths = [
@@ -71,42 +72,38 @@ def load_config_file(config_path: Optional[str] = None) -> Dict[str, Any]:
     for path in possible_paths:
         if path and Path(path).exists():
             try:
-                with open(path, 'r') as f:
-                    file_config = json.load(f)
-                    if file_config:
+                with open(path, 'r', encoding='utf-8') as f:
+                    loaded_config = json.load(f)
+                    if loaded_config:
                         # Merge with defaults
-                        if 'defaults' in file_config:
-                            config.update(file_config['defaults'])
-                        logger = logging.getLogger("deploy")
-                        logger.info(f"Loaded configuration from: {path}")
-                        return config
+                        if 'defaults' in loaded_config:
+                            file_config.update(loaded_config['defaults'])
+                        deploy_logger = logging.getLogger("deploy")
+                        deploy_logger.info(f"Loaded configuration from: {path}")
+                        return file_config
             except json.JSONDecodeError as e:
-                logger = logging.getLogger("deploy")
-                logger.warning(f"Invalid JSON in config file {path}: {e}")
+                deploy_logger = logging.getLogger("deploy")
+                deploy_logger.warning(f"Invalid JSON in config file {path}: {e}")
             except Exception as e:
-                logger = logging.getLogger("deploy")
-                logger.warning(f"Could not load config file {path}: {e}")
+                deploy_logger = logging.getLogger("deploy")
+                deploy_logger.warning(f"Could not load config file {path}: {e}")
                 
-    return config
+    return file_config
 
 class DeployError(Exception):
     """Base exception class for Deploy application errors."""
-    pass
 
 
 class ConfigurationError(DeployError):
     """Raised when there's an error in configuration."""
-    pass
 
 
 class HostLoadError(DeployError):
     """Raised when there's an error loading hosts."""
-    pass
 
 
 class ScriptLoadError(DeployError):
     """Raised when there's an error loading scripts."""
-    pass
 
 
 class DispatchingFormatter(logging.Formatter):
@@ -123,6 +120,7 @@ class DispatchingFormatter(logging.Formatter):
             formatters: Dictionary mapping logger names to formatters
             default_formatter: Default formatter to use when no specific formatter found
         """
+        super().__init__()
         self._formatters = formatters
         self._default_formatter = default_formatter
 
@@ -417,7 +415,7 @@ def _create_local_host(local_credentials: str) -> Dict[str, Host]:
             )
         }
     except Exception as e:
-        raise HostLoadError(f"Error creating local host configuration: {e}")
+        raise HostLoadError(f"Error creating local host configuration: {e}") from e
 
 
 def _load_hosts_from_csv(args: argparse.Namespace, logger: logging.Logger) -> Dict[str, Host]:
@@ -440,7 +438,7 @@ def _load_hosts_from_csv(args: argparse.Namespace, logger: logging.Logger) -> Di
         return utils.create_hosts_from_csv(records, accepted_os)
         
     except Exception as e:
-        raise HostLoadError(f"Error loading CSV file '{args.csv}': {e}")
+        raise HostLoadError(f"Error loading CSV file '{args.csv}': {e}") from e
 
 
 def _load_hosts_from_json(args: argparse.Namespace, logger: logging.Logger) -> Dict[str, Host]:
@@ -462,11 +460,11 @@ def _load_hosts_from_json(args: argparse.Namespace, logger: logging.Logger) -> D
             
             logger.info(f"Filtered to {len(filtered_config)} hosts in network {args.network}")
             return utils.create_hosts_from_json(filtered_config)
-        else:
-            return utils.create_hosts_from_json(config)
+        
+        return utils.create_hosts_from_json(config)
             
     except Exception as e:
-        raise HostLoadError(f"Error loading JSON file '{args.json}': {e}")
+        raise HostLoadError(f"Error loading JSON file '{args.json}': {e}") from e
 
 def load_scripts(args: argparse.Namespace, logger: logging.Logger) -> Dict[str, Any]:
     """
@@ -508,7 +506,7 @@ def load_scripts(args: argparse.Namespace, logger: logging.Logger) -> Dict[str, 
     except Exception as e:
         if isinstance(e, ScriptLoadError):
             raise
-        raise ScriptLoadError(f"Error loading scripts from '{args.scripts}': {e}")
+        raise ScriptLoadError(f"Error loading scripts from '{args.scripts}': {e}") from e
 
 def list_hosts_and_scripts(
     hosts: Dict[str, Host], 
@@ -694,7 +692,7 @@ if __name__ == "__main__":
         
         if args.list:
             list_hosts_and_scripts(hosts, scripts, args, logger)
-            exit(0)
+            sys.exit(0)
             
         logger.info(f"Loaded {len(hosts)} hosts and {len(scripts)} scripts")
         
@@ -708,14 +706,14 @@ if __name__ == "__main__":
         
     except (ConfigurationError, HostLoadError, ScriptLoadError) as e:
         logger.error(f"Configuration error: {e}")
-        exit(1)
+        sys.exit(1)
     except KeyboardInterrupt:
         logger.warning("Operation interrupted by user")
-        exit(1)
+        sys.exit(1)
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
         if args.verbose:
             import traceback
             logger.error(traceback.format_exc())
-        exit(1)
-    exit(0)
+        sys.exit(1)
+    sys.exit(0)

@@ -2,8 +2,9 @@
 """
 Setup script for Deploy - Multi-threaded Deployment Framework
 """
-from setuptools import setup, find_packages
 from pathlib import Path
+
+from setuptools import setup, find_packages
 
 # Read the README file
 readme_file = Path(__file__).parent / "README.md"

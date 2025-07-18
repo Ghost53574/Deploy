@@ -1,3 +1,7 @@
+"""
+Utility functions for the Deploy application.
+Provides helper functions for CSV parsing, network operations, and file handling.
+"""
 import json
 import logging
 from pathlib import Path
@@ -22,7 +26,7 @@ def parse_csv_file(file_path: str) -> List[Dict[str, str]]:
     import csv
     
     records = []
-    with open(file_path, 'r') as csvfile:
+    with open(file_path, 'r', encoding='utf-8') as csvfile:
         logger.info(f"Opened CSV: {file_path}")
         reader = csv.DictReader(csvfile)
         for row in reader:
@@ -157,7 +161,7 @@ def script_inline_replace(pattern: str, replacement: str, content: str) -> str:
 
 def create_script_from_template(template_path: str, replacements: Dict[str, str]) -> str:
     """Create a script from a template with replacements."""
-    with open(template_path, 'r') as f:
+    with open(template_path, 'r', encoding='utf-8') as f:
         content = f.read()
     
     for pattern, replacement in replacements.items():

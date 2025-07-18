@@ -6,9 +6,8 @@ Implements the producer/consumer pattern for task distribution and execution.
 import concurrent.futures
 import logging
 import queue
-import threading
 import signal
-import time
+import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -155,7 +154,7 @@ class TaskManager:
             admin=admin
         )
         if self.settings.verbose:
-                logger.debug(f"Adding {task} to {hostname}")
+            logger.debug(f"Adding {task} to {hostname}")
         self.add_task(task)
     
     def add_script_task(self, hostname: str, script_name: str, arguments: str = "", admin: bool = False) -> None:
@@ -183,7 +182,7 @@ class TaskManager:
             admin=admin
         )
         if self.settings.verbose:
-                logger.debug(f"Adding {task} to {hostname}")
+            logger.debug(f"Adding {task} to {hostname}")
         self.add_task(task)
     
     def add_task_for_all_hosts(self, script_name: Optional[str] = None, command: Optional[str] = None, 

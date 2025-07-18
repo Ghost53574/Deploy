@@ -15,7 +15,7 @@ from pypsrp.powershell import PowerShell, RunspacePool
 from netmiko import ConnectHandler
 from netmiko.exceptions import NetMikoTimeoutException, NetMikoAuthenticationException
 
-import modules.utils as utils
+from modules import utils
 from modules.classes import Host, Settings
 
 # Configure logger
@@ -76,7 +76,6 @@ class BaseConnection(ABC):
         Raises:
             DeployConnectionError: If connection fails
         """
-        pass
     
     @abstractmethod
     def execute_command(
@@ -99,7 +98,6 @@ class BaseConnection(ABC):
         Raises:
             DeployConnectionError: If execution fails
         """
-        pass
     
     @abstractmethod
     def execute_script(
@@ -126,12 +124,10 @@ class BaseConnection(ABC):
         Raises:
             DeployConnectionError: If execution fails
         """
-        pass
     
     @abstractmethod
     def close(self) -> None:
         """Close the connection."""
-        pass
     
     def __enter__(self):
         """Enter context manager."""
@@ -520,7 +516,7 @@ class NetmikoConnection(BaseConnection):
             
         try:
             # Read the script file as a list of commands
-            with open(script_path, 'r') as f:
+            with open(script_path, 'r', encoding='utf-8') as f:
                 commands = [line.strip() for line in f if line.strip() and not line.strip().startswith('#')]
             
             # Enter enable mode if admin requested and not already in enable mode
@@ -742,7 +738,7 @@ class WinRMConnection(BaseConnection):
                 ps = PowerShell(runspace)
                 
                 # Read the script file
-                with open(script_path, 'r') as f:
+                with open(script_path, 'r', encoding='utf-8') as f:
                     script_content = f.read()
                 
                 # Execute based on script type

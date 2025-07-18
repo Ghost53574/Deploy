@@ -8,7 +8,6 @@ import os
 
 class ValidationError(Exception):
     """Exception raised for validation errors in the data models."""
-    pass
 
 class Host:
     """
