@@ -14,7 +14,7 @@ long_description = readme_file.read_text() if readme_file.exists() else ""
 requirements_file = Path(__file__).parent / "requirements.txt"
 requirements = []
 if requirements_file.exists():
-    requirements = requirements_file.read_text().strip().split('\n')
+    requirements = requirements_file.read_text().strip().split("\n")
 
 setup(
     name="deploy-framework",
