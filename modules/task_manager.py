@@ -236,14 +236,12 @@ class TaskManager:
             List of task results
         """
         results = []
-        import threading
-        import signal
         import time
 
         # Set up exit event for signal handling
         exiting = threading.Event()
 
-        def sig_handler(signum, frame):
+        def sig_handler(signum, _frame):
             logger.warning(f"Received signal {signum}, initiating graceful shutdown")
             exiting.set()
 
@@ -366,9 +364,7 @@ class TaskManager:
             concurrent.futures.CancelledError: If the task was cancelled due to exit request
             Exception: If task execution fails with any other error
         """
-        import threading
         import time
-        import concurrent.futures
 
         result = None
         exception = None
@@ -409,7 +405,7 @@ class TaskManager:
             )
 
         # Re-raise any exception from the worker thread
-        if exception:
+        if exception is not None:
             raise exception
 
         return result
@@ -437,24 +433,21 @@ class TaskManager:
         connection = ConnectionFactory.create_connection(task.host, self.settings)
         if self.settings.verbose:
             logger.info(f"Connection: {connection}")
-        try:
-            # Connect and execute based on task type
-            with connection:
-                if task.script:
-                    return connection.execute_script(
-                        script_path=task.script.path,
-                        script_name=task.script.name,
-                        script_type=task.script.get_executor_type(),
-                        arguments=task.arguments or "",
-                        admin=task.admin or self.settings.admin,
-                    )
-                elif task.command:
-                    return connection.execute_command(
-                        command=task.command,
-                        arguments=task.arguments or "",
-                        admin=task.admin or self.settings.admin,
-                    )
-                else:
-                    raise ValueError("Task has neither script nor command")
-        except Exception:
-            raise
+        # Connect and execute based on task type
+        with connection:
+            if task.script:
+                return connection.execute_script(
+                    script_path=task.script.path,
+                    script_name=task.script.name,
+                    script_type=task.script.get_executor_type(),
+                    arguments=task.arguments or "",
+                    admin=task.admin or self.settings.admin,
+                )
+            elif task.command:
+                return connection.execute_command(
+                    command=task.command,
+                    arguments=task.arguments or "",
+                    admin=task.admin or self.settings.admin,
+                )
+            else:
+                raise ValueError("Task has neither script nor command")

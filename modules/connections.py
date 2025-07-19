@@ -15,7 +15,6 @@ from pypsrp.powershell import PowerShell, RunspacePool
 from netmiko import ConnectHandler
 from netmiko.exceptions import NetMikoTimeoutException, NetMikoAuthenticationException
 
-from modules import utils
 from modules.classes import Host, Settings
 
 # Configure logger
@@ -166,7 +165,7 @@ class SSHConnection(BaseConnection):
             else:
                 self.connection = self._connect_with_password()
         except Exception as e:
-            raise DeployConnectionError(f"Failed to connect to {self.host}: {str(e)}")
+            raise DeployConnectionError(f"Failed to connect to {self.host}: {str(e)}") from e
 
     def _connect_with_password(self) -> Connection:
         """
@@ -332,7 +331,7 @@ class SSHConnection(BaseConnection):
         except Exception as e:
             raise DeployConnectionError(
                 f"Failed to execute command '{command}' on {self.host}: {str(e)}"
-            )
+            ) from e
 
     def execute_script(
         self,
@@ -430,7 +429,7 @@ class SSHConnection(BaseConnection):
         except Exception as e:
             raise DeployConnectionError(
                 f"Failed to execute script '{script_name}' on {self.host}: {str(e)}"
-            )
+            ) from e
 
     def close(self) -> None:
         """Close the SSH connection."""
@@ -489,14 +488,14 @@ class NetmikoConnection(BaseConnection):
             if self.host.enable_password:
                 self.connection.enable()
 
-        except NetMikoTimeoutException:
-            raise DeployConnectionError(f"Connection timeout to {self.host.address}")
-        except NetMikoAuthenticationException:
+        except NetMikoTimeoutException as exc:
+            raise DeployConnectionError(f"Connection timeout to {self.host.address}") from exc
+        except NetMikoAuthenticationException as exc:
             raise DeployConnectionError(
                 f"Authentication failed for {self.host.username}@{self.host.address}"
-            )
+            ) from exc
         except Exception as e:
-            raise DeployConnectionError(f"Failed to connect to {self.host}: {str(e)}")
+            raise DeployConnectionError(f"Failed to connect to {self.host}: {str(e)}") from e
 
     def execute_command(
         self, command: str, arguments: str = "", admin: bool = False
@@ -539,7 +538,7 @@ class NetmikoConnection(BaseConnection):
         except Exception as e:
             raise DeployConnectionError(
                 f"Failed to execute command '{command}' on {self.host}: {str(e)}"
-            )
+            ) from e
 
     def execute_script(
         self,
@@ -604,7 +603,7 @@ class NetmikoConnection(BaseConnection):
         except Exception as e:
             raise DeployConnectionError(
                 f"Failed to execute script '{script_name}' on {self.host}: {str(e)}"
-            )
+            ) from e
 
     def close(self) -> None:
         """Close the Netmiko connection."""
@@ -660,7 +659,7 @@ class WinRMConnection(BaseConnection):
                     # Re-raise other exceptions
                     raise
         except Exception as e:
-            raise DeployConnectionError(f"Failed to connect to {self.host}: {str(e)}")
+            raise DeployConnectionError(f"Failed to connect to {self.host}: {str(e)}") from e
 
     def _attempt_connection(self, kwargs: Dict[str, Any], auth_method: str) -> None:
         """
@@ -776,7 +775,7 @@ class WinRMConnection(BaseConnection):
         except Exception as e:
             raise DeployConnectionError(
                 f"Failed to execute command '{command}' on {self.host}: {str(e)}"
-            )
+            ) from e
 
     def execute_script(
         self,
@@ -839,7 +838,7 @@ class WinRMConnection(BaseConnection):
         except Exception as e:
             raise DeployConnectionError(
                 f"Failed to execute script '{script_name}' on {self.host}: {str(e)}"
-            )
+            ) from e
 
     def close(self) -> None:
         """Close the WinRM connection."""

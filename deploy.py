@@ -675,7 +675,7 @@ def execute_and_report(task_manager: TaskManager, logger: logging.Logger) -> Non
         total_tasks = successes + failures
         success_rate = (successes / total_tasks * 100) if total_tasks > 0 else 0
 
-        logger.info(f"Task execution completed:")
+        logger.info("Task execution completed:")
         logger.info(f"  Total tasks: {total_tasks}")
         logger.info(f"  Successful: {successes}")
         logger.info(f"  Failed: {failures}")
@@ -696,7 +696,7 @@ if __name__ == "__main__":
     Returns:
         Exit code (0 for success, 1 for error)
     """
-    # Load configuration earlyg
+    # Load configuration early
     args = parse_args()
     setup_logging(args.verbose)
     logger = logging.getLogger("deploy")

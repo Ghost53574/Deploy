@@ -164,7 +164,7 @@ def get_ip_address(interface: str) -> str:
         try:
             import subprocess
 
-            output = subprocess.check_output(f"ipconfig", shell=True).decode("utf-8")
+            output = subprocess.check_output("ipconfig", shell=True).decode("utf-8")
             lines = output.split("\n")
             for i, line in enumerate(lines):
                 if interface in line:
@@ -174,7 +174,7 @@ def get_ip_address(interface: str) -> str:
                             ip = lines[j].split(":")[-1].strip()
                             return ip
             return ""
-        except:
+        except Exception:
             return ""
 
 
@@ -199,12 +199,12 @@ def create_script_from_template(
 def load_config(config_file: str) -> Dict:
     """Load configuration from a JSON file."""
     try:
-        with open(config_file, "r") as f:
+        with open(config_file, "r", encoding="utf-8") as f:
             return json.load(f)
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Config file not found: {config_file}")
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"Config file not found: {config_file}") from exc
     except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in config file: {e}")
+        raise ValueError(f"Invalid JSON in config file: {e}") from e
 
 
 def create_hosts_from_json(config: Dict) -> Dict[str, Host]:
