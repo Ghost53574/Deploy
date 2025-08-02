@@ -1,9 +1,0 @@
-{
-  "localhost": {
-    "username": "$(whoami)",
-    "password": "",
-    "os": "linux",
-    "address": "127.0.0.1",
-    "port": "22"
-  }
-}
