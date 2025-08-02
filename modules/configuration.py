@@ -10,6 +10,7 @@ from modules import utils
 from modules.classes import Settings, Host
 from modules.task_manager import TaskManager
 from modules.exceptions import HostLoadError, ScriptLoadError, ConfigurationError
+from modules.utils import parse_filter_string, FilterCriteria
 
 # Default configuration
 DEFAULT_CONFIG = {
@@ -90,15 +91,12 @@ def load_hosts(args: argparse.Namespace, logger: logging.Logger) -> Dict[str, Ho
     elif args.json:
         hosts = _load_hosts_from_json(args, logger)
 
-    # Filter to specific host if requested
-    if args.host:
-        if args.host in hosts:
-            hosts = {args.host: hosts[args.host]}
-        else:
-            available_hosts = ", ".join(hosts.keys())
-            raise HostLoadError(
-                f"Host '{args.host}' not found. Available hosts: {available_hosts}"
-            )
+    # Apply unified filter if specified
+    if hasattr(args, 'filter') and args.filter:
+        try:
+            hosts = utils.filter_hosts_by_criteria(hosts, parse_filter_string(args.filter))
+        except ValueError as e:
+            raise HostLoadError(f"Invalid filter syntax: {e}") from e
 
     if not hosts:
         raise HostLoadError("No hosts loaded. Check your configuration file.")
@@ -136,24 +134,12 @@ def _load_hosts_from_csv(
 ) -> Dict[str, Host]:
     """Load hosts from CSV file."""
     try:
-        accepted_os = (
-            args.os.split(",") if args.os else DEFAULT_CONFIG["default_os_filter"]
-        )
-
+        # Load all records without filtering - unified filter will handle this
         records = utils.parse_csv_file(args.csv)
         logger.info(f"Loaded {len(records)} records from CSV file: {args.csv}")
 
-        # Apply network filtering if specified
-        if args.network:
-            networks = [args.network]
-            filtered_records = []
-            for _, records_in_network in utils.add_ip_to_networks(
-                records, networks
-            ).items():
-                filtered_records.extend(records_in_network)
-            records = filtered_records
-            logger.info(f"Filtered to {len(records)} records in network {args.network}")
-
+        # Use default OS filter for basic validation
+        accepted_os = DEFAULT_CONFIG["default_os_filter"]
         return utils.create_hosts_from_csv(records, accepted_os)
 
     except Exception as e:
@@ -168,21 +154,7 @@ def _load_hosts_from_json(
         config = utils.load_config(args.json)
         logger.info(f"Loaded configuration from JSON file: {args.json}")
 
-        # Apply network filtering if specified
-        if args.network:
-            filtered_config = {}
-            for hostname, host_config in config.items():
-                ip_address = host_config.get("address")
-                if ip_address and utils.match_ip_to_network(
-                    ip_address=ip_address, network=args.network
-                ):
-                    filtered_config[hostname] = host_config
-
-            logger.info(
-                f"Filtered to {len(filtered_config)} hosts in network {args.network}"
-            )
-            return utils.create_hosts_from_json(filtered_config)
-
+        # Load all hosts without filtering - unified filter will handle this
         return utils.create_hosts_from_json(config)
 
     except Exception as e:
@@ -213,18 +185,14 @@ def load_scripts(args: argparse.Namespace, logger: logging.Logger) -> Dict[str, 
             scripts_dir = Path(".")
 
         scripts = utils.find_scripts(scripts_dir, DEFAULT_CONFIG["script_extensions"])
-        logger.info(f"Found {len(scripts)} scripts in directory: {scripts_dir}")
+        logger.debug(f"Found {len(scripts)} scripts in directory: {scripts_dir}")
 
-        # Filter to specific script if requested
-        if args.task:
-            if args.task in scripts:
-                scripts = {args.task: scripts[args.task]}
-                logger.info(f"Filtered to script: {args.task}")
-            else:
-                available_scripts = ", ".join(scripts.keys())
-                raise ScriptLoadError(
-                    f"Script '{args.task}' not found. Available scripts: {available_scripts}"
-                )
+        # Apply unified filter if specified
+        if hasattr(args, 'filter') and args.filter:
+            try:
+                scripts = utils.filter_scripts_by_criteria(scripts, parse_filter_string(args.filter))
+            except ValueError as e:
+                raise ScriptLoadError(f"Invalid filter syntax: {e}") from e
 
         return scripts
 
@@ -251,42 +219,31 @@ def list_hosts_and_scripts(
         args: Parsed command line arguments
         logger: Logger instance for output
     """
-    filtered_os: str
-    if args.os:
-        filtered_os = args.os.split(",")
-        logger.warning(f"Filtering hosts by OS: {filtered_os}")
-    filtered_network: str
-    if args.network:
-        filtered_network = args.network
-        logger.warning(f"Filtering hosts by network: {filtered_network}")
-    else:
-        filtered_network = ""
-
+    # Display hosts (already filtered by unified filter system)
+    logger.info(f"Hosts ({len(hosts)}):")
     for hostname, host in hosts.items():
-        if filtered_os and host.os:
-            if host.os not in filtered_os:
-                continue
-        if filtered_network and host.address:
-            if not utils.match_ip_to_network(host.address, filtered_network):
-                continue
         if args.verbose:
-            logger.info(f"Host: {hostname}")
-            logger.info(f"  Address: {host.address}")
-            logger.info(f"  Port: {host.port}")
-            logger.info(f"  OS: {host.os}")
-            logger.info(f"  Username: {host.username}")
+            logger.info(f"  Host: {hostname}")
+            logger.info(f"    Address: {host.address}")
+            logger.info(f"    Port: {host.port}")
+            logger.info(f"    OS: {host.os}")
+            logger.info(f"    Username: {host.username}")
+            if host.device_type:
+                logger.info(f"    Device Type: {host.device_type}")
             # Note: Passwords are not logged for security
         else:
-            logger.info(f"Host: {hostname}@{host.address}")
+            logger.info(f"  {hostname}@{host.address} ({host.os})")
 
+    # Display scripts (already filtered by unified filter system)
+    logger.info(f"Scripts ({len(scripts)}):")
     for script_name, script_data in scripts.items():
         if args.verbose:
-            logger.info(f"Script: {script_name}")
-            logger.info(f"  Path: {script_data.path}")
-            logger.info(f"  Extension: {script_data.extension}")
-            logger.info(f"  Executor Type: {script_data.get_executor_type()}")
+            logger.info(f"  Script: {script_name}")
+            logger.info(f"    Path: {script_data.path}")
+            logger.info(f"    Extension: {script_data.extension}")
+            logger.info(f"    Executor Type: {script_data.get_executor_type()}")
         else:
-            logger.info(f"Script: {script_name}")
+            logger.info(f"  {script_name}")
 
 
 def create_settings(args: argparse.Namespace) -> Settings:
@@ -299,11 +256,29 @@ def create_settings(args: argparse.Namespace) -> Settings:
     Returns:
         Configured Settings object
     """
+    # Check if we have a task filter to determine single_task
+    single_task = False
+    if hasattr(args, 'filter') and args.filter:
+        try:
+            filter_criteria = parse_filter_string(args.filter)
+            single_task = bool(filter_criteria.task)
+        except ValueError:
+            pass  # Ignore filter parsing errors here
+    
+    # Check if we have a hostname filter to determine single_host
+    single_host = False
+    if hasattr(args, 'filter') and args.filter:
+        try:
+            filter_criteria = parse_filter_string(args.filter)
+            single_host = bool(filter_criteria.hostname)
+        except ValueError:
+            pass  # Ignore filter parsing errors here
+    
     return Settings(
         admin=args.sudo,
-        single_host=bool(args.host),
+        single_host=single_host,
         single_command=bool(args.command),
-        single_task=bool(args.task),
+        single_task=single_task,
         extra_args=bool(args.arguments),
         logging=False,
         quiet=args.quiet,
@@ -346,19 +321,14 @@ def setup_tasks(
                 arguments=args.arguments or "",
                 admin=args.sudo,
             )
-
-    elif args.task:
-        # Execute a specific script on all hosts
-        if args.task not in scripts:
-            raise ConfigurationError(
-                f"Script '{args.task}' not found in loaded scripts"
-            )
-
-        logger.info(f"Executing script '{args.task}' on {len(hosts)} hosts")
+    elif len(scripts) == 1:
+        # Execute the single filtered script on all hosts
+        script_name = next(iter(scripts))
+        logger.info(f"Executing script '{script_name}' on {len(hosts)} hosts")
         for hostname in hosts:
             task_manager.add_script_task(
                 hostname=hostname,
-                script_name=args.task,
+                script_name=script_name,
                 arguments=args.arguments or "",
                 admin=args.sudo,
             )

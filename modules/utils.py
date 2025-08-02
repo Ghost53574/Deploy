@@ -5,11 +5,106 @@ Provides helper functions for CSV parsing, network operations, and file handling
 
 import json
 import logging
+import fnmatch
+import ipaddress
 from pathlib import Path
 from typing import Dict, List, Optional
 from modules.classes import Host, Script, ValidationError
 
 logger = logging.getLogger(__name__)
+
+
+class FilterCriteria:
+    """
+    Represents parsed filter criteria for hosts and scripts.
+    """
+    
+    def __init__(self):
+        self.os: Optional[List[str]] = None
+        self.username: Optional[str] = None
+        self.address: Optional[str] = None
+        self.port: Optional[List[str]] = None
+        self.network: Optional[str] = None
+        self.device: Optional[List[str]] = None
+        self.hostname: Optional[str] = None
+        self.host: Optional[str] = None
+        self.task: Optional[str] = None
+        self.script: Optional[str] = None
+
+
+def parse_filter_string(filter_string: str) -> FilterCriteria:
+    """
+    Parse a filter string into FilterCriteria object.
+    
+    Args:
+        filter_string: String in format "key1=value1,key2=value2,..."
+        
+    Returns:
+        FilterCriteria object with parsed values
+        
+    Raises:
+        ValueError: If filter string format is invalid
+    """
+    if not filter_string:
+        return FilterCriteria()
+    
+    criteria = FilterCriteria()
+    
+    # Split by commas, but handle commas within values
+    pairs = []
+    current_pair = ""
+    paren_count = 0
+    
+    for char in filter_string:
+        if char == ',' and paren_count == 0:
+            pairs.append(current_pair.strip())
+            current_pair = ""
+        else:
+            if char == '(':
+                paren_count += 1
+            elif char == ')':
+                paren_count -= 1
+            current_pair += char
+    
+    if current_pair.strip():
+        pairs.append(current_pair.strip())
+    
+    # Parse each key=value pair
+    for pair in pairs:
+        if '=' not in pair:
+            raise ValueError(f"Invalid filter format: '{pair}'. Expected 'key=value'")
+        
+        key, value = pair.split('=', 1)
+        key = key.strip().lower()
+        value = value.strip()
+        
+        if key == 'os':
+            # Support comma-separated OS values
+            criteria.os = [os.strip() for os in value.split(',')]
+        elif key == 'username':
+            criteria.username = value
+        elif key == 'address':
+            criteria.address = value
+        elif key == 'port':
+            # Support comma-separated port values
+            criteria.port = [port.strip() for port in value.split(',')]
+        elif key == 'network':
+            criteria.network = value
+        elif key == 'device':
+            # Support comma-separated device types
+            criteria.device = [device.strip() for device in value.split(',')]
+        elif key == 'hostname':
+            criteria.hostname = value
+        elif key == 'host':
+            criteria.host = value
+        elif key in ['task', 'script']:
+            # Both task and script filter the same thing
+            criteria.task = value
+            criteria.script = value
+        else:
+            raise ValueError(f"Unknown filter key: '{key}'. Supported keys: os, username, address, port, network, device, hostname, host, task, script")
+    
+    return criteria
 
 
 class Field:
@@ -305,3 +400,161 @@ def find_scripts(current_dir: Path, accepted_exts: List[str]) -> Dict[str, Scrip
             logger.error(f"Invalid script: {e}")
 
     return scripts
+
+
+def matches_wildcard_pattern(value: str, pattern: str) -> bool:
+    """
+    Check if a value matches a wildcard pattern.
+    
+    Args:
+        value: The value to check
+        pattern: The pattern to match against (supports * and ? wildcards)
+        
+    Returns:
+        True if value matches pattern, False otherwise
+    """
+    if not pattern:
+        return True
+    
+    # Convert to lowercase for case-insensitive matching
+    value_lower = value.lower()
+    pattern_lower = pattern.lower()
+    
+    # Use fnmatch for wildcard support
+    return fnmatch.fnmatch(value_lower, pattern_lower)
+
+
+def matches_network_pattern(ip_address: str, pattern: str) -> bool:
+    """
+    Check if an IP address matches a network pattern.
+    Supports CIDR notation and wildcard patterns.
+    
+    Args:
+        ip_address: The IP address to check
+        pattern: The pattern to match against (CIDR or wildcard)
+        
+    Returns:
+        True if IP matches pattern, False otherwise
+    """
+    if not pattern:
+        return True
+    
+    # Handle CIDR notation
+    if '/' in pattern:
+        return match_ip_to_network(ip_address, pattern)
+    
+    # Handle wildcard patterns
+    if '*' in pattern or '?' in pattern:
+        return matches_wildcard_pattern(ip_address, pattern)
+    
+    # Exact match
+    return ip_address == pattern
+
+
+def filter_hosts_by_criteria(hosts: Dict[str, Host], filter_criteria) -> Dict[str, Host]:
+    """
+    Filter hosts based on filter criteria.
+    
+    Args:
+        hosts: Dictionary of hosts to filter
+        filter_criteria: FilterCriteria object with filter conditions
+        
+    Returns:
+        Filtered dictionary of hosts
+    """
+    if not filter_criteria:
+        return hosts
+    
+    filtered_hosts = {}
+    
+    for hostname, host in hosts.items():
+        # Check OS filter
+        if filter_criteria.os:
+            if not host.os or not any(
+                matches_wildcard_pattern(host.os, os_pattern) 
+                for os_pattern in filter_criteria.os
+            ):
+                continue
+        
+        # Check username filter
+        if filter_criteria.username:
+            if not host.username or not matches_wildcard_pattern(
+                host.username, filter_criteria.username
+            ):
+                continue
+        
+        # Check address filter
+        if filter_criteria.address:
+            if not host.address or not matches_wildcard_pattern(
+                host.address, filter_criteria.address
+            ):
+                continue
+        
+        # Check port filter
+        if filter_criteria.port:
+            if not host.port or not any(
+                str(host.port) == port_pattern or matches_wildcard_pattern(
+                    str(host.port), port_pattern
+                )
+                for port_pattern in filter_criteria.port
+            ):
+                continue
+        
+        # Check network filter
+        if filter_criteria.network:
+            if not host.address or not matches_network_pattern(
+                host.address, filter_criteria.network
+            ):
+                continue
+        
+        # Check device type filter
+        if filter_criteria.device:
+            if not host.device_type or not any(
+                matches_wildcard_pattern(host.device_type, device_pattern)
+                for device_pattern in filter_criteria.device
+            ):
+                continue
+        
+        # Check hostname filter
+        if filter_criteria.hostname:
+            if not matches_wildcard_pattern(hostname, filter_criteria.hostname):
+                continue
+        
+        # Check host filter (matches both hostname and address/network)
+        if filter_criteria.host:
+            hostname_match = matches_wildcard_pattern(hostname, filter_criteria.host)
+            address_match = False
+            if host.address:
+                address_match = matches_network_pattern(host.address, filter_criteria.host)
+            
+            if not (hostname_match or address_match):
+                continue
+        
+        # If all filters pass, include the host
+        filtered_hosts[hostname] = host
+    
+    return filtered_hosts
+
+
+def filter_scripts_by_criteria(scripts: Dict[str, Script], filter_criteria) -> Dict[str, Script]:
+    """
+    Filter scripts based on filter criteria.
+    
+    Args:
+        scripts: Dictionary of scripts to filter
+        filter_criteria: FilterCriteria object with filter conditions
+        
+    Returns:
+        Filtered dictionary of scripts
+    """
+    if not filter_criteria or not filter_criteria.task:
+        return scripts
+    
+    filtered_scripts = {}
+    
+    for script_name, script in scripts.items():
+        # Check task/script name filter
+        if matches_wildcard_pattern(script_name, filter_criteria.task):
+            filtered_scripts[script_name] = script
+    
+    return filtered_scripts
