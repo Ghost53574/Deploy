@@ -6,7 +6,6 @@ Provides helper functions for CSV parsing, network operations, and file handling
 import json
 import logging
 import fnmatch
-import ipaddress
 from pathlib import Path
 from typing import Dict, List, Optional
 from modules.classes import Host, Script, ValidationError
@@ -362,7 +361,7 @@ def create_hosts_from_csv(
     return hosts
 
 
-def parse_files(current_dir: Path, accepted_exts: list) -> list:
+def parse_files(current_dir: Path, accepted_exts: list) -> List[Path]:
     files = []
     for f in Path(current_dir).rglob("*"):
         if f.is_file():
@@ -370,7 +369,7 @@ def parse_files(current_dir: Path, accepted_exts: list) -> list:
             if len(f_parts) == 2:
                 f_ext = f_parts[1]
                 if f_ext is not None and f_ext in accepted_exts:
-                    files.append(f.name)
+                    files.append(f.absolute())
     return files
 
 
@@ -378,17 +377,15 @@ def find_scripts(current_dir: Path, accepted_exts: List[str]) -> Dict[str, Scrip
     """Find and create Script objects from files in the current directory."""
     scripts = {}
 
-    # Find files with matching extensions
-    files = parse_files(current_dir, accepted_exts)
+    current_dir = current_dir.absolute()
 
-    # Create Script objects
-    for file_name in files:
-        path = Path(str(current_dir) + "/" + file_name)
+    for file in parse_files(current_dir, accepted_exts):
+        path = file.relative_to(current_dir)
         script_name = str(path.name)
-        script_dir = str(path.parts[-2])
-        script_path = str(path)
+        script_dir = str(path.parent)
         script_ext = str(path.suffix)
-
+        script_path = str(file)
+        
         try:
             scripts[script_name] = Script(
                 name=script_name,

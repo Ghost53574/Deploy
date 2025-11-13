@@ -10,12 +10,12 @@ from typing import Any, Dict
 import getpass
 
 from fabric2 import Connection, Config
-from pypsrp.wsman import WSMan
 from pypsrp.powershell import PowerShell, RunspacePool
 from netmiko import ConnectHandler
 from netmiko.exceptions import NetMikoTimeoutException, NetMikoAuthenticationException
 
 from modules.classes import Host, Settings
+from modules.wsman_transport import WSManDeploy
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -704,8 +704,36 @@ class WinRMConnection(BaseConnection):
             conn_kwargs["password"] = self.host.password
             conn_kwargs["auth"] = AUTH_NEGOTIATE
 
+        # Add enhanced connection parameters
+        if hasattr(self.host, 'reconnection_retries') and self.host.reconnection_retries:
+            conn_kwargs["reconnection_retries"] = self.host.reconnection_retries
+        else:
+            conn_kwargs["reconnection_retries"] = 3  # Default
+            
+        if hasattr(self.host, 'reconnection_backoff') and self.host.reconnection_backoff:
+            conn_kwargs["reconnection_backoff"] = self.host.reconnection_backoff
+        else:
+            conn_kwargs["reconnection_backoff"] = 2.0  # Default
+            
+        if hasattr(self.host, 'connection_timeout') and self.host.connection_timeout:
+            conn_kwargs["connection_timeout"] = self.host.connection_timeout
+        elif self.settings.connection_timeout:
+            conn_kwargs["connection_timeout"] = self.settings.connection_timeout
+        else:
+            conn_kwargs["connection_timeout"] = 30  # Default
+            
+        if hasattr(self.host, 'read_timeout') and self.host.read_timeout:
+            conn_kwargs["read_timeout"] = self.host.read_timeout
+        else:
+            conn_kwargs["read_timeout"] = 30  # Default
+            
+        if hasattr(self.host, 'user_agent') and self.host.user_agent:
+            conn_kwargs["user_agent"] = self.host.user_agent
+        else:
+            conn_kwargs["user_agent"] = "Microsoft WinRM Client"  # Default
+
         # Create WinRM connection
-        self.connection = WSMan(**conn_kwargs)
+        self.connection = WSManDeploy(**conn_kwargs)
 
     def _get_auth_method(self) -> str:
         """

@@ -51,6 +51,13 @@ class Host:
         self.ssl = config.get("ssl", False)
         self.server_cert_validation = config.get("server_cert_validation", "ignore")
 
+        # WinRM connection parameters (optional)
+        self.reconnection_retries = config.get("reconnection_retries")
+        self.reconnection_backoff = config.get("reconnection_backoff")
+        self.connection_timeout = config.get("connection_timeout")
+        self.read_timeout = config.get("read_timeout")
+        self.user_agent = config.get("user_agent")
+
         # Validate the host configuration
         self.validate()
 

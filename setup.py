@@ -18,12 +18,12 @@ if requirements_file.exists():
 
 setup(
     name="deploy-framework",
-    version="2.0.0",
-    author="coz",
+    version="2.0.2",
+    author="c0z",
     description="A multi-threaded deployment and control framework",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/deploy",  # Update with actual URL
+    url="https://github.com/Ghost53574/Deploy",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",
