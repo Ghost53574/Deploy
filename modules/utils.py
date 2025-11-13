@@ -363,13 +363,17 @@ def create_hosts_from_csv(
 
 def parse_files(current_dir: Path, accepted_exts: list) -> List[Path]:
     files = []
-    for f in Path(current_dir).rglob("*"):
-        if f.is_file():
-            f_parts = f.name.split(".")
-            if len(f_parts) == 2:
-                f_ext = f_parts[1]
-                if f_ext is not None and f_ext in accepted_exts:
-                    files.append(f.absolute())
+    path = Path(current_dir)
+    if path:
+        for f in path.rglob("*"):
+            if f.is_file():
+                f_parts = f.name.split(".")
+                if len(f_parts) == 2:
+                    f_ext = f_parts[1]
+                    if f_ext is not None and f_ext in accepted_exts:
+                        files.append(f.absolute())
+    else:
+        raise ValidationError(f"Path is not correct: {current_dir}")
     return files
 
 

@@ -12,5 +12,5 @@ import os
 
 sys.path.append(f"{os.getcwd()}/modules")
 
-__version__ = "2.0.1"
-__author__ = "coz"
+__version__ = "2.0.2"
+__author__ = "c0z"

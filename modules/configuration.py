@@ -176,7 +176,7 @@ def load_scripts(args: argparse.Namespace, logger: logging.Logger) -> Dict[str, 
         ScriptLoadError: If there's an error loading scripts
     """
     try:
-        scripts_dir = Path(args.scripts)
+        scripts_dir = Path(args.scripts).resolve()
 
         if not scripts_dir.exists():
             logger.warning(
