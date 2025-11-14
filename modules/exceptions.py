@@ -8,7 +8,6 @@ class ConfigurationError(DeployError):
     def __init__(self, message=None):
         super().__init__(message or "Configuration error in the Deploy application.")
 
-
 class HostLoadError(DeployError):
     """Raised when there's an error loading hosts."""
     def __init__(self, message=None):

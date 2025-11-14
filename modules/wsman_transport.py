@@ -33,7 +33,6 @@ except ImportError as err:
         def __init__(self, *args, **kwargs):
             raise ImportError(_requests_credssp_import_error)
 
-
 logger = logging.getLogger(__name__)
 
 class WSManDeploy(WSMan):
@@ -128,7 +127,6 @@ class WSManDeploy(WSMan):
 
         # Calculate max payload size based on envelope size
         self.max_payload_size = self._calc_envelope_size(max_envelope_size)
-
 
 class _TransportHTTPDeploy(_TransportHTTP):
     """

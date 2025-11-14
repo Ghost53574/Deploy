@@ -12,7 +12,6 @@ from modules.classes import Host, Script, ValidationError
 
 logger = logging.getLogger(__name__)
 
-
 class FilterCriteria:
     """
     Represents parsed filter criteria for hosts and scripts.
@@ -29,7 +28,6 @@ class FilterCriteria:
         self.host: Optional[str] = None
         self.task: Optional[str] = None
         self.script: Optional[str] = None
-
 
 def parse_filter_string(filter_string: str) -> FilterCriteria:
     """
@@ -105,7 +103,6 @@ def parse_filter_string(filter_string: str) -> FilterCriteria:
     
     return criteria
 
-
 class Field:
     """Enumeration of CSV fields."""
 
@@ -117,7 +114,6 @@ class Field:
     NOTES = "notes"
     DEFAULT_USER = "username"
     DEFAULT_PASSWORD = "password"
-
 
 def parse_csv_file(file_path: str) -> List[Dict[str, str]]:
     """Parse a CSV file into a list of dictionaries."""
@@ -131,7 +127,6 @@ def parse_csv_file(file_path: str) -> List[Dict[str, str]]:
             records.append(row)
 
     return records
-
 
 def match_ip_to_network(ip_address: str, network: str) -> bool:
     """Check if an IP address belongs to a network."""
@@ -147,7 +142,6 @@ def match_ip_to_network(ip_address: str, network: str) -> bool:
     except ValueError:
         return False
 
-
 def get_network_from_ip(ip_address: str, netmask: str) -> str:
     import ipaddress
 
@@ -158,7 +152,6 @@ def get_network_from_ip(ip_address: str, netmask: str) -> str:
     net = ipaddress.IPv4Network(f"{ip}/{netmask}", strict=False)
     return str(net.network_address)
 
-
 def get_hosts_from_network(network_address: str, netmask: str) -> List[str]:
     import ipaddress
 
@@ -167,7 +160,6 @@ def get_hosts_from_network(network_address: str, netmask: str) -> List[str]:
     for ip in net.hosts():
         hosts.append(ip)
     return hosts
-
 
 def add_ip_to_networks(
     records: List[Dict[str, str]], networks: List[str]
@@ -182,7 +174,6 @@ def add_ip_to_networks(
             ):
                 network_db[network].append(record)
     return network_db
-
 
 def parse_ports(ports_str: str) -> List[int]:
     """Parse a comma-separated list of ports."""
@@ -200,7 +191,6 @@ def parse_ports(ports_str: str) -> List[int]:
             result.append(int(port))
 
     return result
-
 
 def check_ports(ip: str, ports: List[int]) -> bool:
     """Check if any of the ports are open on the host."""
@@ -221,7 +211,6 @@ def check_ports(ip: str, ports: List[int]) -> bool:
 
     return False
 
-
 def check_os(os_name: str, accepted_os: List[str]) -> bool:
     """Check if the OS is in the list of accepted OS."""
     os_lower = os_name.lower()
@@ -229,7 +218,6 @@ def check_os(os_name: str, accepted_os: List[str]) -> bool:
         if accepted.lower() in os_lower:
             return True
     return False
-
 
 def get_ip_address(interface: str) -> str:
     """Get the IP address of a network interface."""
@@ -271,11 +259,9 @@ def get_ip_address(interface: str) -> str:
         except Exception:
             return ""
 
-
 def script_inline_replace(pattern: str, replacement: str, content: str) -> str:
     """Replace patterns in script content."""
     return content.replace(pattern, replacement)
-
 
 def create_script_from_template(
     template_path: str, replacements: Dict[str, str]
@@ -288,7 +274,6 @@ def create_script_from_template(
         content = script_inline_replace(pattern, replacement, content)
 
     return content
-
 
 def load_config(config_file: str) -> Dict:
     """Load configuration from a JSON file."""
@@ -310,7 +295,6 @@ def create_hosts_from_json(config: Dict) -> Dict[str, Host]:
         except ValidationError as e:
             logger.error(f"Invalid host configuration: {e}")
     return hosts
-
 
 def create_hosts_from_csv(
     records: List[Dict[str, str]], accepted_os: Optional[List[str]] = None
@@ -360,7 +344,6 @@ def create_hosts_from_csv(
             logger.error(f"Invalid host configuration for {hostname}: {e}")
     return hosts
 
-
 def parse_files(current_dir: Path, accepted_exts: list) -> List[Path]:
     files = []
     path = Path(current_dir)
@@ -376,7 +359,6 @@ def parse_files(current_dir: Path, accepted_exts: list) -> List[Path]:
         raise ValidationError(f"Path is not correct: {current_dir}")
     return files
 
-
 def find_scripts(current_dir: Path, accepted_exts: List[str]) -> Dict[str, Script]:
     """Find and create Script objects from files in the current directory."""
     scripts = {}
@@ -388,12 +370,13 @@ def find_scripts(current_dir: Path, accepted_exts: List[str]) -> Dict[str, Scrip
         script_name = str(path.name)
         script_dir = str(path.parent)
         script_ext = str(path.suffix)
-        script_path = str(file)
+        # Pass Path object directly instead of converting to string
+        script_path = file
         
         try:
             scripts[script_name] = Script(
                 name=script_name,
-                path=script_path,
+                path=script_path,  # Now a Path object
                 directory=script_dir,
                 extension=script_ext,
             )
@@ -424,7 +407,6 @@ def matches_wildcard_pattern(value: str, pattern: str) -> bool:
     # Use fnmatch for wildcard support
     return fnmatch.fnmatch(value_lower, pattern_lower)
 
-
 def matches_network_pattern(ip_address: str, pattern: str) -> bool:
     """
     Check if an IP address matches a network pattern.
@@ -450,7 +432,6 @@ def matches_network_pattern(ip_address: str, pattern: str) -> bool:
     
     # Exact match
     return ip_address == pattern
-
 
 def filter_hosts_by_criteria(hosts: Dict[str, Host], filter_criteria) -> Dict[str, Host]:
     """
@@ -535,7 +516,6 @@ def filter_hosts_by_criteria(hosts: Dict[str, Host], filter_criteria) -> Dict[st
         filtered_hosts[hostname] = host
     
     return filtered_hosts
-
 
 def filter_scripts_by_criteria(scripts: Dict[str, Script], filter_criteria) -> Dict[str, Script]:
     """

@@ -3,13 +3,28 @@
 Improved data models for the Deploy application.
 Includes proper type hints, validation, and better OOP structure.
 """
-from typing import Dict, Any
+from typing import Dict, Any, Union
 import os
+from enum import Enum
+from pathlib import Path
 
+class OSType(Enum):
+    """Enumeration of supported operating system types."""
+    LINUX = "linux"
+    WINDOWS = "windows"
+    NETWORK = "network"
+
+class ScriptType(Enum):
+    """Enumeration of supported script types."""
+    BASH = "bash"
+    PYTHON = "python"
+    POWERSHELL = "powershell"
+    BATCH = "batch"
+    PERL = "perl"
+    CONFIG = "config"
 
 class ValidationError(Exception):
     """Exception raised for validation errors in the data models."""
-
 
 class Host:
     """
@@ -63,11 +78,11 @@ class Host:
 
         # Set default port if not provided
         if not self.port:
-            if self.os == "linux":
+            if self.os == OSType.LINUX.value:
                 self.port = "22"
-            elif self.os == "windows":
+            elif self.os == OSType.WINDOWS.value:
                 self.port = "5985"
-            elif self.os == "network":
+            elif self.os == OSType.NETWORK.value:
                 self.port = "22"  # Default for most network devices
 
     def validate(self) -> None:
@@ -86,7 +101,8 @@ class Host:
             raise ValidationError(f"Host {self.hostname}: os is required")
 
         # Validate OS type
-        if self.os not in ["linux", "windows", "network"]:
+        valid_os_values = [OSType.LINUX.value, OSType.WINDOWS.value, OSType.NETWORK.value]
+        if self.os not in valid_os_values:
             raise ValidationError(
                 f"Host {self.hostname}: invalid os '{self.os}', must be 'linux', 'windows', or 'network'"
             )
@@ -108,13 +124,13 @@ class Host:
             )
 
         # Network device validation
-        if self.os == "network" and not self.device_type:
+        if self.os == OSType.NETWORK.value and not self.device_type:
             raise ValidationError(
                 f"Host {self.hostname}: device_type is required for network devices"
             )
 
         # Windows authentication protocol validation
-        if self.os == "windows" and self.auth_protocol not in [
+        if self.os == OSType.WINDOWS.value and self.auth_protocol not in [
             "basic",
             "credssp",
             "kerberos",
@@ -126,7 +142,7 @@ class Host:
             )
 
         # Certificate validation for certificate auth
-        if self.os == "windows" and self.auth_protocol == "certificate":
+        if self.os == OSType.WINDOWS.value and self.auth_protocol == "certificate":
             if not self.cert_pem:
                 raise ValidationError(
                     f"Host {self.hostname}: cert_pem is required for certificate authentication"
@@ -171,14 +187,14 @@ class Host:
             params["ssh_key_pass"] = self.ssh_key_pass
 
         # Add network device parameters
-        if self.os == "network":
+        if self.os == OSType.NETWORK.value:
             params["device_type"] = self.device_type
             params["enable_password"] = self.enable_password
             params["global_delay_factor"] = self.global_delay_factor
             params["timeout"] = self.timeout
 
         # Add Windows authentication parameters
-        if self.os == "windows":
+        if self.os == OSType.WINDOWS.value:
             params["auth_protocol"] = self.auth_protocol
             params["ssl"] = self.ssl
             params["server_cert_validation"] = self.server_cert_validation
@@ -189,24 +205,24 @@ class Host:
 
         return params
 
-
 class Script:
     """
     Represents a script that can be executed on remote hosts.
     """
 
-    def __init__(self, name: str, path: str, directory: str, extension: str):
+    def __init__(self, name: str, path: Union[str, Path], directory: str, extension: str):
         """
         Initialize a script object.
 
         Args:
             name: The name of the script file
-            path: The full path to the script file
+            path: The full path to the script file (as Path object or string)
             directory: The directory containing the script
             extension: The file extension
         """
         self.name = name
-        self.path = path
+        # Convert path to Path object if it's a string
+        self.path = Path(path) if isinstance(path, str) else path
         self.directory = directory
         self.extension = extension
 
@@ -221,42 +237,39 @@ class Script:
             ValidationError: If validation fails
         """
         # Check that the script file exists
-        if not os.path.exists(self.path):
+        if not self.path.exists():
             raise ValidationError(
                 f"Script {self.name}: file '{self.path}' does not exist"
             )
 
-        # Validate extension
-        valid_extensions = [".py", ".py2", ".py3", ".sh", ".bat", ".ps1", ".pl"]
-        if self.extension not in valid_extensions:
-            raise ValidationError(
-                f"Script {self.name}: unsupported extension '{self.extension}'"
-            )
+        # Validate extension - now accepting config files without standard extensions
+        valid_extensions = [".py", ".py2", ".py3", ".sh", ".bat", ".ps1", ".pl", ".txt", ".cfg", ".conf"]
+        if self.extension and self.extension not in valid_extensions:
+            pass
 
     def __str__(self) -> str:
         """Return a string representation of the script."""
         return self.name
 
-    def get_executor_type(self) -> str:
+    def get_executor_type(self) -> ScriptType:
         """
         Determine the executor type based on the script extension.
 
         Returns:
-            String identifier for the executor type
+            ScriptType enum value for the executor type
         """
         if self.extension == ".sh":
-            return "bash"
+            return ScriptType.BASH
         elif self.extension in [".py", ".py2", ".py3"]:
-            return "python"
+            return ScriptType.PYTHON
         elif self.extension == ".pl":
-            return "perl"
+            return ScriptType.PERL
         elif self.extension == ".ps1":
-            return "powershell"
+            return ScriptType.POWERSHELL
         elif self.extension == ".bat":
-            return "batch"
+            return ScriptType.BATCH
         else:
-            return "unknown"
-
+            return ScriptType.CONFIG
 
 class Settings:
     """

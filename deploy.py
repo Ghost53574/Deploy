@@ -19,7 +19,7 @@ from modules.configuration import load_config_file
 from modules.exceptions import ConfigurationError, HostLoadError, ScriptLoadError
 from modules.configuration import (
     create_settings, load_hosts, load_scripts, 
-    list_hosts_and_scripts, setup_tasks, execute_and_report
+    list_hosts_and_scripts, setup_tasks, execute_and_report,
 )
 
 sys.dont_write_bytecode = True
@@ -31,7 +31,6 @@ if __name__ == "__main__":
     Returns:
         Exit code (0 for success, 1 for error)
     """
-    # Load configuration early
     args = parse_args()
     setup_logging(args.verbose)
     logger = logging.getLogger("deploy")
@@ -40,7 +39,6 @@ if __name__ == "__main__":
         print(BANNER)
 
     try:
-        # Load configuration file
         config = load_config_file(args.config)
         hosts = load_hosts(args, logger)
         scripts = load_scripts(args, logger)
@@ -57,7 +55,7 @@ if __name__ == "__main__":
         task_manager.add_scripts(scripts)
 
         setup_tasks(args, task_manager, hosts, scripts, logger)
-        execute_and_report(task_manager, logger)
+        execute_and_report(task_manager, logger, args)
 
     except (ConfigurationError, HostLoadError, ScriptLoadError) as e:
         logger.error(f"Configuration error: {e}")

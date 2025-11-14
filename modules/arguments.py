@@ -142,4 +142,21 @@ def parse_args() -> argparse.Namespace:
              "Note: 'hostname' filters by hostname only, 'host' filters by both hostname and IP address. "
              "Example: --filter os=windows,task=*.ps1,host=192.168.1.*",
     )
+
+    # Output and execution mode options
+    parser.add_argument(
+        "-O",
+        "--output-format",
+        type=str,
+        choices=["text", "json"],
+        default="text",
+        help="Output format for results (default: text)",
+    )
+    parser.add_argument(
+        "--save-results",
+        type=str,
+        metavar="FILE",
+        help="Save execution results to specified file (supports .json or .txt)",
+    )
+    
     return parser.parse_args()
