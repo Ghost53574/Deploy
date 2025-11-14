@@ -178,6 +178,7 @@ class SSHConnection(BaseConnection):
                     "connect_kwargs": {
                         "password": self.host.password,
                         "look_for_keys": False,
+                        "allow_agent": False,
                         "banner_timeout": 60,
                     },
                 }
@@ -190,6 +191,7 @@ class SSHConnection(BaseConnection):
                     "connect_kwargs": {
                         "password": self.host.password,
                         "look_for_keys": False,
+                        "allow_agent": False,
                         "banner_timeout": 60,
                     },
                 }
