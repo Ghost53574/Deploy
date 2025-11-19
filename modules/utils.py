@@ -285,7 +285,6 @@ def load_config(config_file: str) -> Dict:
     except json.JSONDecodeError as e:
         raise ValueError(f"Invalid JSON in config file: {e}") from e
 
-
 def create_hosts_from_json(config: Dict) -> Dict[str, Host]:
     """Create Host objects from JSON configuration."""
     hosts = {}
@@ -384,7 +383,6 @@ def find_scripts(current_dir: Path, accepted_exts: List[str]) -> Dict[str, Scrip
             logger.error(f"Invalid script: {e}")
 
     return scripts
-
 
 def matches_wildcard_pattern(value: str, pattern: str) -> bool:
     """

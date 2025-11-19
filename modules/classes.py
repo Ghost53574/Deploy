@@ -16,11 +16,7 @@ class OSType(Enum):
 
 class ScriptType(Enum):
     """Enumeration of supported script types."""
-    BASH = "bash"
-    PYTHON = "python"
-    POWERSHELL = "powershell"
-    BATCH = "batch"
-    PERL = "perl"
+    SCRIPT = "script"
     CONFIG = "config"
 
 class ValidationError(Exception):
@@ -258,18 +254,54 @@ class Script:
         Returns:
             ScriptType enum value for the executor type
         """
-        if self.extension == ".sh":
-            return ScriptType.BASH
-        elif self.extension in [".py", ".py2", ".py3"]:
-            return ScriptType.PYTHON
-        elif self.extension == ".pl":
-            return ScriptType.PERL
-        elif self.extension == ".ps1":
-            return ScriptType.POWERSHELL
-        elif self.extension == ".bat":
-            return ScriptType.BATCH
-        else:
+        # For config files, use CONFIG type
+        if self.extension in [".txt", ".cfg", ".conf"]:
             return ScriptType.CONFIG
+        else:
+            # All other files are treated as scripts
+            return ScriptType.SCRIPT
+
+    def get_interpreter_command(self) -> str:
+        """
+        Extract the interpreter command from the script's shebang line.
+        If no shebang is found, infer from file extension.
+
+        Returns:
+            The interpreter command (e.g., 'python3', '/usr/bin/python3')
+        """
+        try:
+            with open(self.path, 'r', encoding='utf-8') as f:
+                first_line = f.readline().strip()
+                
+                # Check for shebang
+                if first_line.startswith('#!'):
+                    # Extract the interpreter path/command
+                    interpreter = first_line[2:].strip()
+                    # Handle /usr/bin/env
+                    if interpreter.startswith('/usr/bin/env '):
+                        interpreter = interpreter[12:].strip()
+                    return interpreter
+        except Exception:
+            pass
+        
+        # Fallback to extension-based inference
+        if self.extension == ".py":
+            return "python"
+        elif self.extension == ".py2":
+            return "python2"
+        elif self.extension == ".py3":
+            return "python3"
+        elif self.extension == ".sh":
+            return "bash"
+        elif self.extension == ".pl":
+            return "perl"
+        elif self.extension == ".ps1":
+            return "powershell"
+        elif self.extension == ".bat":
+            return "cmd"
+        else:
+            # Default to bash for unknown extensions
+            return "bash"
 
 class Settings:
     """

@@ -14,7 +14,7 @@ from pypsrp.powershell import PowerShell, RunspacePool
 from netmiko import ConnectHandler
 from netmiko.exceptions import NetMikoTimeoutException, NetMikoAuthenticationException
 
-from modules.classes import Host, Settings, OSType, ScriptType
+from modules.classes import Host, Settings, OSType, ScriptType, Script
 from modules.wsman_transport import WSManDeploy
 
 logger = logging.getLogger(__name__)
@@ -96,9 +96,7 @@ class BaseConnection(ABC):
     @abstractmethod
     def execute_script(
         self,
-        script_path,
-        script_name: str,
-        script_type: ScriptType,
+        script: "Script",
         arguments: str = "",
         admin: bool = False,
     ) -> Any:
@@ -106,9 +104,7 @@ class BaseConnection(ABC):
         Execute a script on the host.
 
         Args:
-            script_path: Path to the script file (Path object)
-            script_name: Name of the script
-            script_type: Type of script (ScriptType enum)
+            script: Script object containing path, name, and type information
             arguments: Optional arguments to the script
             admin: Whether to execute with admin privileges
 
@@ -333,9 +329,7 @@ class SSHConnection(BaseConnection):
 
     def execute_script(
         self,
-        script_path,
-        script_name: str,
-        script_type: ScriptType,
+        script: Script,
         arguments: str = "",
         admin: bool = False,
     ) -> Any:
@@ -362,31 +356,41 @@ class SSHConnection(BaseConnection):
             raise DeployConnectionError("No active connection")
 
         try:
-            # Convert Path to string for fabric
-            script_path_str = str(script_path)
-            
-            # Upload the script
-            self.connection.put(script_path_str, script_name)
+            # Convert Path to string for fabric and upload
+            script_path_str = str(script.path)
+            self.connection.put(script_path_str, script.name)
 
-            # Make script executable for sh/bash scripts
-            if script_type == ScriptType.BASH:
-                self.connection.run(
-                    f"chmod +x {script_name}",
-                    warn=True,
-                    echo=not self.settings.quiet
-                    or (not self.settings.quiet and self.settings.verbose),
+            # Determine executor type (SCRIPT vs CONFIG)
+            executor_type = script.get_executor_type()
+
+            # If this is a script, try to resolve interpreter and use it;
+            # otherwise fall back to executing the file directly.
+            if executor_type == ScriptType.SCRIPT:
+                interpreter_cmd = script.get_interpreter_command()
+
+                # Attempt to resolve interpreter full path on remote host
+                which_result = self.connection.run(
+                    f"which {interpreter_cmd}", warn=True, hide=True
                 )
+                if which_result.ok and which_result.stdout.strip():
+                    interpreter_path = which_result.stdout.strip()
+                else:
+                    interpreter_path = interpreter_cmd
 
-            # Build command based on script type
-            if script_type == ScriptType.BASH:
-                cmd = f"bash {script_name}"
-            elif script_type == ScriptType.PYTHON:
-                cmd = f"python {script_name}"
-            elif script_type == ScriptType.PERL:
-                cmd = f"perl {script_name}"
+                # If interpreter looks like a shell built-in name we still
+                # call it directly (remote PATH should resolve it).
+                cmd = f"{interpreter_path} {script.name}"
             else:
-                # Default to direct execution for executable scripts
-                cmd = f"./{script_name}"
+                # CONFIG or unknown: treat as text/config - try to run as executable
+                # Make executable and run directly
+                self.connection.run(
+                    f"chmod +x {script.name}",
+                    warn=True,
+                    echo=not self.settings.quiet or (
+                        not self.settings.quiet and self.settings.verbose
+                    ),
+                )
+                cmd = f"./{script.name}"
 
             # Add arguments if provided
             if arguments:
@@ -402,29 +406,33 @@ class SSHConnection(BaseConnection):
                 result = self.connection.run(
                     preamble + cmd,
                     warn=True,
-                    echo=not self.settings.quiet
-                    or (not self.settings.quiet and self.settings.verbose),
+                    echo=not self.settings.quiet or (
+                        not self.settings.quiet and self.settings.verbose
+                    ),
                 )
             else:
                 result = self.connection.run(
                     cmd,
                     warn=True,
-                    echo=not self.settings.quiet
-                    or (not self.settings.quiet and self.settings.verbose),
+                    echo=not self.settings.quiet or (
+                        not self.settings.quiet and self.settings.verbose
+                    ),
                     hide=self.settings.quiet,
                 )
 
+            # Clean up remote script
             self.connection.run(
-                f"rm -f {script_name}",
+                f"rm -f {script.name}",
                 warn=True,
-                echo=not self.settings.quiet
-                or (not self.settings.quiet and self.settings.verbose),
+                echo=not self.settings.quiet or (
+                    not self.settings.quiet and self.settings.verbose
+                ),
             )
 
             return result
         except Exception as e:
             raise DeployConnectionError(
-                f"Failed to execute script '{script_name}' on {self.host}: {str(e)}"
+                f"Failed to execute script '{script.name}' on {self.host}: {str(e)}"
             ) from e
 
     def close(self) -> None:
@@ -537,25 +545,23 @@ class NetmikoConnection(BaseConnection):
 
     def execute_script(
         self,
-        script_path,
-        script_name: str,
-        script_type: ScriptType,
+        script: Script,
         arguments: str = "",
         admin: bool = False,
     ) -> Any:
         """
-        Execute a script on the network device.
-        For network devices, only CONFIG type scripts (text configuration files) are allowed.
+        Execute a network device configuration script via Netmiko.
+
+        Network devices only accept CONFIG-type scripts. The Script object
+        will be validated by the caller; here we enforce CONFIG semantics.
 
         Args:
-            script_path: Path to the script file (Path object)
-            script_name: Name of the script
-            script_type: Type of script (ScriptType enum)
-            arguments: Optional arguments to the script
-            admin: Whether to execute with admin privileges
+            script: Script object containing path, name, and type information
+            arguments: Optional arguments to substitute into commands
+            admin: Whether to enter enable mode before applying config
 
         Returns:
-            Script execution results
+            Results from sending the configuration commands
 
         Raises:
             DeployConnectionError: If execution fails or script type is not CONFIG
@@ -566,18 +572,16 @@ class NetmikoConnection(BaseConnection):
         if not self.connection:
             raise DeployConnectionError("No active connection")
 
-        # Validate that only CONFIG scripts are executed on network devices
-        if script_type != ScriptType.CONFIG:
+        # Enforce CONFIG-type for network devices
+        if script.get_executor_type() != ScriptType.CONFIG:
             raise DeployConnectionError(
-                f"Network devices can only execute CONFIG type scripts. "
-                f"Got {script_type.value} for {script_name}"
+                f"Network devices can only execute CONFIG type scripts. Got {script.get_executor_type().value} for {script.name}"
             )
 
         try:
-            # Convert Path to string for open
-            script_path_str = str(script_path)
-            
-            # Read the script file as a list of commands
+            script_path_str = str(script.path)
+
+            # Read the script file as a list of commands, ignoring comments/empty lines
             with open(script_path_str, "r", encoding="utf-8") as f:
                 commands = [
                     line.strip()
@@ -585,29 +589,20 @@ class NetmikoConnection(BaseConnection):
                     if line.strip() and not line.strip().startswith("#")
                 ]
 
-            # Enter enable mode if admin requested and not already in enable mode
-            if (
-                admin
-                and self.host.enable_password
-                and not self.connection.check_enable_mode()
-            ):
+            # Replace placeholder args if provided
+            if arguments:
+                commands = [c.replace("{args}", arguments) for c in commands]
+
+            # Enter enable mode if requested
+            if admin and self.host.enable_password and not self.connection.check_enable_mode():
                 self.connection.enable()
 
-            # Execute each command in the script
-            results = []
-            for cmd in commands:
-                # Parse arguments if any
-                if arguments and "{args}" in cmd:
-                    cmd = cmd.replace("{args}", arguments)
-
-                output = self.connection.send_command(cmd)
-                results.append(output)
-
-            # Return concatenated results
-            return "\n".join(results)
+            # Send configuration set
+            output = self.connection.send_config_set(commands)
+            return output
         except Exception as e:
             raise DeployConnectionError(
-                f"Failed to execute script '{script_name}' on {self.host}: {str(e)}"
+                f"Failed to execute script '{script.name}' on {self.host}: {str(e)}"
             ) from e
 
     def close(self) -> None:
@@ -820,9 +815,7 @@ class WinRMConnection(BaseConnection):
 
     def execute_script(
         self,
-        script_path,
-        script_name: str,
-        script_type: ScriptType,
+        script: Script,
         arguments: str = "",
         admin: bool = False,
     ) -> Any:
@@ -849,39 +842,38 @@ class WinRMConnection(BaseConnection):
             raise DeployConnectionError("No active connection")
 
         try:
-            # Convert Path to string for open
-            script_path_str = str(script_path)
-            
-            with RunspacePool(self.connection) as runspace:
-                ps = PowerShell(runspace)
+            script_path_str = str(script.path)
 
-                # Read the script file
-                with open(script_path_str, "r", encoding="utf-8") as f:
-                    script_content = f.read()
-
-                # Execute based on script type
-                if script_type == ScriptType.POWERSHELL:
-                    # For PowerShell scripts, run the script directly
+            # Only PowerShell and batch are supported for WinRM execution
+            if script.extension == ".ps1":
+                with RunspacePool(self.connection) as runspace:
+                    ps = PowerShell(runspace)
+                    with open(script_path_str, "r", encoding="utf-8") as f:
+                        script_content = f.read()
                     if arguments:
                         script_content += f" {arguments}"
                     ps.add_script(script_content)
-                elif script_type == ScriptType.BATCH:
-                    # For batch files, use cmd.exe
+                    ps.invoke()
+                    return ps.output
+            elif script.extension == ".bat":
+                with RunspacePool(self.connection) as runspace:
+                    ps = PowerShell(runspace)
+                    with open(script_path_str, "r", encoding="utf-8") as f:
+                        script_content = f.read()
                     command = f"cmd.exe /c '{script_content}'"
                     if arguments:
                         command += f" {arguments}"
                     ps.add_script(command)
-                else:
-                    raise DeployConnectionError(
-                        f"Unsupported script type '{script_type.value}' for Windows"
-                    )
-
-                # Invoke and return results
-                ps.invoke()
-                return ps.output
+                    ps.invoke()
+                    return ps.output
+            else:
+                # For other script types, recommend using SSH (not supported via WinRM here)
+                raise DeployConnectionError(
+                    f"Unsupported script extension '{script.extension}' for WinRM. Use SSH for arbitrary interpreters."
+                )
         except Exception as e:
             raise DeployConnectionError(
-                f"Failed to execute script '{script_name}' on {self.host}: {str(e)}"
+                f"Failed to execute script '{script.name}' on {self.host}: {str(e)}"
             ) from e
 
     def close(self) -> None:

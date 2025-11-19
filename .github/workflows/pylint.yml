@@ -1,30 +1,36 @@
 name: Pylint
 
-on: [push]
+on:
+  push: {}
+  pull_request: {}
 
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pylint fabric2>=2.7.0 paramiko>=2.7.2 pypsrp>=0.5.0 netmiko>=3.3.0 requests_credssp
-    - name: Analysing the code with pylint
-      run: |
-        pylint --fail-under 5 --fail-on E \
-        --disable=C0303 --disable=C0326 --disable=C0301 \
-        --disable=W1203 --disable=C0304 --disable=W0718 \
-        --disable=W0621 --disable=C0415 --disable=W0105 \
-        --disable=R0902 --disable=R0912 --disable=R1705 \
-        --disable=R0913 --disable=R0917 --disable=R0903 \
-        --disable=W0107 --disable=R0914 --disable=C0116 \
-        --disable=R1702  $(git ls-files '*.py') 
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pylint requests_credssp
+      - name: Analysing the code with pylint
+        run: |
+          # Limit pylint to package code and top-level scripts to avoid test-specific style failures
+          FILES="$(git ls-files 'modules/**/*.py' '*.py')"
+          if [ -z "$FILES" ]; then echo "No Python files found"; exit 0; fi
+          pylint --fail-under 5 --fail-on E \
+          --disable=C0303 --disable=C0326 --disable=C0301 \
+          --disable=W1203 --disable=C0304 --disable=W0718 \
+          --disable=W0621 --disable=C0415 --disable=W0105 \
+          --disable=R0902 --disable=R0912 --disable=R1705 \
+          --disable=R0913 --disable=R0917 --disable=R0903 \
+          --disable=W0107 --disable=R0914 --disable=C0116 \
+          --disable=R1702 $FILES

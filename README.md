@@ -4,27 +4,18 @@
 Deploy is a remote execution framework similar to Ansible. This creates a unified system for target management, script deployment, and ongoing control for Linux, Windows, and network devices.
 
 ## Architecture
-```
-┌─────────────────┐     ┌──────────────────┐     ┌────────────────┐
-│  Unified CLI    │────▶│  Target Manager  │────▶│  Task Manager  │
-└─────────────────┘     └──────────────────┘     └────────────────┘
-        │                        │                       │
-        ▼                        ▼                       ▼
-┌─────────────────┐     ┌──────────────────┐     ┌────────────────┐
-│ Config Handlers │     │  Script Manager  │     │  Connections   │
-│  - JSON         │     │  - Template      │     │  - SSH         │
-│  - CSV          │     │  - Manipulation  │     │  - WinRM       │
-└─────────────────┘     └──────────────────┘     │  - Netmiko     │
-                                                 └────────────────┘
-                                                          │
-                                                          ▼
-                                                ┌────────────────┐
-                                                │     Output     │
-                                                └────────────────┘
+```mermaid
+graph TD
+    A[Unified CLI] --> B[Target Manager]
+    B --> C[Task Manager]
+    A --> D[Config Handlers<br>- JSON<br>- CSV]
+    B --> E[Script Manager<br>- Template<br>- Manipulation]
+    C --> F[Connections<br>- SSH<br>- WinRM<br>- Netmiko]
+    F --> G[Output]
 ```
 ## Requirements
 - Python 3.6+
-- Dependencies: fabric2, paramiko, pypsrp, netmiko
+- Dependencies: fabric2, paramiko, pypsrp, netmiko, requests_credssp
 
 ## Usage
 ### Basic Usage
@@ -32,39 +23,49 @@ Deploy is a remote execution framework similar to Ansible. This creates a unifie
 # Execute a command on all hosts defined in a JSON config
 python deploy.py -j configs/config.json -k "uptime"
 
-# Execute a specific script on hosts defined in a CSV file
-python deploy.py -c targets.csv -t script.sh -S
+# Execute a script on hosts defined in a CSV file
+python deploy.py -c targets.csv -S
 
-# Deploy botnet components to all Linux hosts
-python deploy.py -c targets.csv -b -I eth0 -o linux
+# List available hosts and scripts without executing
+python deploy.py -j configs/config.json -L
 ```
 
 ### Command Line Options
-#### Input Sources
-- `-j, --json FILE`: JSON config file with hosts
+#### Input Sources (Required - Choose One)
+- `-j, --json FILE`: JSON configuration file with host definitions
 - `-c, --csv FILE`: CSV file with host information
-- `-d, --scripts DIRECTORY`: Scripts directory location
+
+#### General Options
+- `-q, --quiet`: Minimal output mode
+- `-v, --verbose`: Enable verbose debug output
+- `-d, --scripts DIRECTORY`: Path to scripts directory (default: scripts)
+- `-C, --config FILE`: Path to configuration file (JSON format)
+- `--version`: Show version information
 
 #### Execution Options
-- `-i, --host HOST`: Target a specific host
-- `-l, --local USERNAME,PASSWORD`: Execute locally
-- `-S, --sudo`: Execute with admin privileges
-- `-s, --ssh`: Force SSH for Windows hosts
+- `-l, --local USERNAME,PASSWORD`: Execute locally with credentials: "username,password"
+- `-S, --sudo`: Execute with administrative privileges
+- `-s, --ssh`: Force SSH connection for Windows hosts
 - `-w, --workers N`: Number of concurrent workers (default: 25)
 
-#### Task Options
-- `-k, --command CMD`: Execute a command on hosts
-- `-t, --task SCRIPT`: Execute a specific script name
-- `-a, --arguments ARGS`: Additional arguments for command or script
+#### Timeout Configuration
+- `--connection-timeout SECONDS`: Connection timeout in seconds (default: 30)
+- `--task-timeout SECONDS`: Task execution timeout in seconds (default: 300)
+- `--executor-timeout SECONDS`: Overall execution timeout in seconds (default: 1800)
 
-#### Filter Options
-- `-o, --os OS`: Filter by OS (comma-separated, e.g., "linux,windows,network")
-- `-n, --network CIDR`: Filter by network (CIDR notation)
+#### Task Options
+- `-k, --command CMD`: Execute a shell command on target hosts
+- `-a, --arguments ARGS`: Arguments to pass to command or script
+
+#### Filtering Options
+- `-f, --filter KEY=VALUE`: Filter hosts and tasks using key=value pairs (comma-separated). Supported keys: os, username, address, port, network, device, hostname, host, task, script. Note: 'hostname' filters by hostname only, 'host' filters by both hostname and IP address. Example: --filter os=windows,task=*.ps1,host=192.168.1.*
+
+#### Output Options
+- `-O, --output-format FORMAT`: Output format for results (text or json, default: text)
+- `--save-results FILE`: Save execution results to specified file (supports .json or .txt)
 
 #### Other Options
-- `-q, --quiet`: Minimal output
-- `-v, --verbose`: Verbose output
-- `-L, --list`: List hosts and scripts without executing
+- `-L, --list`: List available hosts and scripts without executing
 
 ## Examples
 
@@ -75,12 +76,12 @@ python deploy.py -c inventory.csv -L
 
 ### 2. Execute a Command on Specific Hosts
 ```bash
-python deploy.py -j configs/config.json -k "uname -a" -o linux
+python deploy.py -j configs/config.json -k "uname -a" -f os=linux
 ```
 
 ### 3. Deploy a Script with Arguments
 ```bash
-python deploy.py -j configs/config.json -t update.sh -a "--force" -S
+python deploy.py -j configs/config.json -a "--force" -S
 ```
 
 ## CSV Format

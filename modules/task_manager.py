@@ -437,9 +437,7 @@ class TaskManager:
         with connection:
             if task.script:
                 return connection.execute_script(
-                    script_path=task.script.path,
-                    script_name=task.script.name,
-                    script_type=task.script.get_executor_type(),
+                    script=task.script,
                     arguments=task.arguments or "",
                     admin=task.admin or self.settings.admin,
                 )

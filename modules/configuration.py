@@ -126,13 +126,12 @@ def _create_local_host(local_credentials: str) -> Dict[str, Host]:
     except Exception as e:
         raise HostLoadError(f"Error creating local host configuration: {e}") from e
 
-
 def _load_hosts_from_csv(
     args: argparse.Namespace, logger: logging.Logger
 ) -> Dict[str, Host]:
     """Load hosts from CSV file."""
     try:
-        # Load all records without filtering - unified filter will handle this
+        # Load all records without filtering - filter will handle this
         records = utils.parse_csv_file(args.csv)
         logger.info(f"Loaded {len(records)} records from CSV file: {args.csv}")
 
@@ -143,7 +142,6 @@ def _load_hosts_from_csv(
     except Exception as e:
         raise HostLoadError(f"Error loading CSV file '{args.csv}': {e}") from e
 
-
 def _load_hosts_from_json(
     args: argparse.Namespace, logger: logging.Logger
 ) -> Dict[str, Host]:
@@ -152,7 +150,7 @@ def _load_hosts_from_json(
         config = utils.load_config(args.json)
         logger.info(f"Loaded configuration from JSON file: {args.json}")
 
-        # Load all hosts without filtering - unified filter will handle this
+        # Load all hosts without filtering - filter will handle this
         return utils.create_hosts_from_json(config)
 
     except Exception as e:
@@ -184,13 +182,17 @@ def load_scripts(args: argparse.Namespace, logger: logging.Logger) -> Dict[str, 
         scripts = utils.find_scripts(scripts_dir, DEFAULT_CONFIG["script_extensions"])
         logger.debug(f"Found {len(scripts)} scripts in directory: {scripts_dir}")
 
-        # Apply unified filter if specified
+        # Apply filter if specified
         if hasattr(args, 'filter') and args.filter:
             try:
-                scripts = utils.filter_scripts_by_criteria(scripts, parse_filter_string(args.filter))
+                scripts = utils.filter_scripts_by_criteria(
+                    scripts=scripts, 
+                    filter_criteria=parse_filter_string(
+                        filter_string=args.filter
+                    )
+                )
             except ValueError as e:
                 raise ScriptLoadError(f"Invalid filter syntax: {e}") from e
-
         return scripts
 
     except Exception as e:
